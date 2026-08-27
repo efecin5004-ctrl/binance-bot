@@ -1,0 +1,6 @@
+{
+  "name": "Binance Trading Bot & Quant Terminal",
+  "description": "Institutional Quantitative Trading & Research Lab for Binance featuring 60/20/20 train-validation-OOS splits, walk-forward analysis, market regime stress-testing, overfitting diagnostics, parameter sensitivity curves, and paper execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
