@@ -239,6 +239,50 @@ export const RiskManager: React.FC<RiskManagerProps> = ({
                 className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-900 font-mono text-xs focus:bg-white focus:border-blue-500 outline-none"
               />
             </div>
+
+            {/* Sinyal Zaman Aşımı (Timeout) & Tazelik Filtresi */}
+            <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-semibold text-slate-900 block text-xs">⏱️ Sinyal Zaman Aşımı (Signal Timeout)</span>
+                  <span className="text-[10px] text-slate-500">Eski/gecikmiş sinyallerin rastgele işlem açmasını engeller</span>
+                </div>
+                <span className="font-bold text-blue-600 font-mono text-xs">{riskSettings.signalTimeoutMinutes || 3} Dk</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-0.5">Maks. Sinyal Yaşı (Dk)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={riskSettings.signalTimeoutMinutes || 3}
+                    onChange={(e) => handleChange('signalTimeoutMinutes', parseInt(e.target.value) || 3)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-900 font-mono text-xs focus:bg-white focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-0.5">Min. Güven Skoru (%)</label>
+                  <input
+                    type="number"
+                    min="50"
+                    max="99"
+                    value={riskSettings.minSignalConfidence || 75}
+                    onChange={(e) => handleChange('minSignalConfidence', parseInt(e.target.value) || 75)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-slate-900 font-mono text-xs focus:bg-white focus:border-blue-500 outline-none"
+                  />
+                </div>
+              </div>
+              <label className="flex items-center gap-1.5 pt-1 text-[11px] text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={riskSettings.requireFreshCross ?? true}
+                  onChange={(e) => handleChange('requireFreshCross', e.target.checked)}
+                  className="accent-blue-600 rounded"
+                />
+                <span className="font-medium">Sadece taze kırılım/kesişim anında al (Geçmiş trend devamında alım yapma)</span>
+              </label>
+            </div>
           </div>
         </div>
 

@@ -547,13 +547,15 @@ export function evaluateStrategySignal(
   const hasHammerWick = candleRange > 0 && lowerWick / candleRange >= 0.45;
   const hasShootingStarWick = candleRange > 0 && upperWick / candleRange >= 0.45;
 
+  const stratParams = strategy.parameters || {};
+
   switch (strategy.type) {
     // -------------------------------------------------------------
     // 0. QUANT MACRO TREND RIDER (EMA 12/50 Dynamic Trend System - Verified +18-24% Monthly Profit)
     // -------------------------------------------------------------
     case 'QUANT_TREND_MACRO': {
-      const fastPeriod = strategy.fastEma || 12;
-      const slowPeriod = strategy.slowEma || 50;
+      const fastPeriod = Number(stratParams.fastEma || strategy.fastEma || 12);
+      const slowPeriod = Number(stratParams.slowEma || strategy.slowEma || 50);
       const fastEmaArr = calculateEMA(closes, fastPeriod);
       const slowEmaArr = calculateEMA(closes, slowPeriod);
       const prevF = fastEmaArr[len - 2] ?? currentPrice;
@@ -579,6 +581,258 @@ export function evaluateStrategySignal(
         result.suggestedTakeProfit = currentPrice * 0.65;
       } else {
         result.reasons.push(`Quant Trend Durumu: EMA ${fastPeriod} = $${curF.toFixed(2)} | EMA ${slowPeriod} = $${curS.toFixed(2)} (${curF > curS ? 'BOĞA AKIŞI' : 'AYI BASKISI'}).`);
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 1: TREND_FOLLOWING (Donchian Turtle / Dual EMA)
+    // -------------------------------------------------------------
+    case 'TREND_FOLLOWING': {
+      const lookbackH = Number(stratParams.lookbackHigh || 20);
+      const lookbackL = Number(stratParams.lookbackLow || 20);
+      const adxFilter = Number(stratParams.adxFilter || 20);
+      const atrMult = Number(stratParams.atrMultiplier || 2.0);
+
+      const prevHighs = highs.slice(-(lookbackH + 1), -1);
+      const prevLows = lows.slice(-(lookbackL + 1), -1);
+      const highestHigh = prevHighs.length > 0 ? Math.max(...prevHighs) : currentPrice;
+      const lowestLow = prevLows.length > 0 ? Math.min(...prevLows) : currentPrice;
+
+      if (currentPrice > highestHigh && adx >= adxFilter) {
+        result.type = 'BUY';
+        result.confidence = Math.min(95, Math.round(70 + adx));
+        result.reasons.push(`Fiyat ${lookbackH} barlık Donchian tavanını ($${highestHigh.toFixed(2)}) yukarı kırdı.`);
+        result.reasons.push(`Trend Gücü: ADX(${adx.toFixed(1)}) >= ${adxFilter}.`);
+        result.suggestedStopLoss = currentPrice - (atrMult * atr);
+        result.suggestedTakeProfit = currentPrice + (4.0 * atr);
+      } else if (currentPrice < lowestLow && adx >= adxFilter) {
+        result.type = 'SELL';
+        result.confidence = Math.min(95, Math.round(70 + adx));
+        result.reasons.push(`Fiyat ${lookbackL} barlık Donchian tabanını ($${lowestLow.toFixed(2)}) aşağı kırdı.`);
+        result.reasons.push(`Trend Gücü: ADX(${adx.toFixed(1)}) >= ${adxFilter}.`);
+        result.suggestedStopLoss = currentPrice + (atrMult * atr);
+        result.suggestedTakeProfit = currentPrice - (4.0 * atr);
+      } else {
+        result.reasons.push(`Donchian Kanalı: Tavan $${highestHigh.toFixed(2)} | Taban $${lowestLow.toFixed(2)}.`);
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 2: MOMENTUM (Time Series Momentum TS-MOM)
+    // -------------------------------------------------------------
+    case 'MOMENTUM': {
+      const lookback = Number(stratParams.lookbackBars || 24);
+      const thresh = Number(stratParams.thresholdZScore || 1.0);
+
+      if (len > lookback) {
+        const pastPrice = closes[len - 1 - lookback];
+        const returnPct = ((currentPrice - pastPrice) / pastPrice) * 100;
+        const atrPct = (atr / currentPrice) * 100;
+        const zScore = atrPct > 0 ? (returnPct / atrPct) : 0;
+
+        if (zScore >= thresh) {
+          result.type = 'BUY';
+          result.confidence = Math.min(95, Math.round(60 + zScore * 15));
+          result.reasons.push(`TS-MOM Pozitif Momentum: %${returnPct.toFixed(2)} (${lookback} Bar).`);
+          result.reasons.push(`Volatilite Normalleştirilmiş Z-Score: +${zScore.toFixed(2)} >= +${thresh}.`);
+          result.suggestedStopLoss = currentPrice - (2 * atr);
+          result.suggestedTakeProfit = currentPrice + (4 * atr);
+        } else if (zScore <= -thresh) {
+          result.type = 'SELL';
+          result.confidence = Math.min(95, Math.round(60 + Math.abs(zScore) * 15));
+          result.reasons.push(`TS-MOM Negatif Momentum: %${returnPct.toFixed(2)} (${lookback} Bar).`);
+          result.reasons.push(`Volatilite Normalleştirilmiş Z-Score: ${zScore.toFixed(2)} <= -${thresh}.`);
+          result.suggestedStopLoss = currentPrice + (2 * atr);
+          result.suggestedTakeProfit = currentPrice - (4 * atr);
+        } else {
+          result.reasons.push(`TS-MOM Momentum Z-Score: ${zScore.toFixed(2)} (Eşik: ±${thresh}).`);
+        }
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 3: MEAN_REVERSION (Z-Score & RSI Extreme)
+    // -------------------------------------------------------------
+    case 'MEAN_REVERSION': {
+      const smaPeriod = Number(stratParams.smaPeriod || 20);
+      const zThresh = Number(stratParams.zScoreThreshold || 2.0);
+      const rsiOversold = Number(stratParams.rsiOversold || 28);
+      const rsiOverbought = Number(stratParams.rsiOverbought || 72);
+      const maxAdx = Number(stratParams.maxAdxFilter || 22);
+
+      const sma = calculateSMA(closes, smaPeriod);
+      const curSma = sma[len - 1];
+
+      if (curSma !== null && len >= smaPeriod) {
+        const slice = closes.slice(-smaPeriod);
+        const variance = slice.reduce((acc, c) => acc + Math.pow(c - curSma, 2), 0) / smaPeriod;
+        const stdDev = Math.sqrt(variance);
+        const zScore = stdDev > 0 ? (currentPrice - curSma) / stdDev : 0;
+        const isChopRegime = adx <= maxAdx;
+
+        if (zScore <= -zThresh && currentRsi <= rsiOversold && isChopRegime) {
+          result.type = 'BUY';
+          result.confidence = 88;
+          result.reasons.push(`Z-Score Sapması: ${zScore.toFixed(2)} <= -${zThresh} (İstatistiksel Aşırı Satım).`);
+          result.reasons.push(`RSI(14): ${currentRsi.toFixed(1)} <= ${rsiOversold} & Yatay Piyasa Rejimi (ADX <= ${maxAdx}).`);
+          result.suggestedStopLoss = currentPrice * 0.98;
+          result.suggestedTakeProfit = curSma;
+        } else if (zScore >= zThresh && currentRsi >= rsiOverbought && isChopRegime) {
+          result.type = 'SELL';
+          result.confidence = 88;
+          result.reasons.push(`Z-Score Sapması: +${zScore.toFixed(2)} >= +${zThresh} (İstatistiksel Aşırı Alım).`);
+          result.reasons.push(`RSI(14): ${currentRsi.toFixed(1)} >= ${rsiOverbought} & Yatay Piyasa Rejimi (ADX <= ${maxAdx}).`);
+          result.suggestedStopLoss = currentPrice * 1.02;
+          result.suggestedTakeProfit = curSma;
+        } else {
+          result.reasons.push(`Z-Score: ${zScore.toFixed(2)}, RSI: ${currentRsi.toFixed(1)}, ADX: ${adx.toFixed(1)}.`);
+        }
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 4: BREAKOUT_VOLATILITY (TTM Squeeze)
+    // -------------------------------------------------------------
+    case 'BREAKOUT_VOLATILITY': {
+      const bbPeriod = Number(stratParams.bbPeriod || 20);
+      const bbStd = Number(stratParams.bbStdDev || 2.0);
+      const kcPeriod = Number(stratParams.kcPeriod || 20);
+      const kcMult = Number(stratParams.kcMultiplier || 1.5);
+
+      const bb = calculateBollingerBands(closes, bbPeriod, bbStd);
+      const kc = calculateKeltnerChannels(klines, kcPeriod, kcMult);
+      const macd = calculateMACD(closes, 12, 26, 9);
+
+      const bbUp = bb.upper[len - 1];
+      const bbLow = bb.lower[len - 1];
+      const kcUp = kc.upper[len - 1];
+      const kcLow = kc.lower[len - 1];
+      const curHist = macd.histogram[len - 1] ?? 0;
+      const prevHist = macd.histogram[len - 2] ?? 0;
+
+      if (bbUp && bbLow && kcUp && kcLow) {
+        const prevBbUp = bb.upper[len - 2] ?? bbUp;
+        const prevKcUp = kc.upper[len - 2] ?? kcUp;
+        const wasInSqueeze = prevBbUp < prevKcUp;
+        const isFiringLong = wasInSqueeze && bbUp > kcUp && curHist > 0 && curHist > prevHist;
+        const isFiringShort = wasInSqueeze && bbLow < kcLow && curHist < 0 && curHist < prevHist;
+
+        if (isFiringLong) {
+          result.type = 'BUY';
+          result.confidence = 90;
+          result.reasons.push('Volatilite Sıkışması (Squeeze) yukarı patladı.');
+          result.reasons.push(`MACD İvmesi Genişliyor (+${curHist.toFixed(4)}).`);
+          result.suggestedStopLoss = currentPrice * 0.97;
+          result.suggestedTakeProfit = currentPrice * 1.06;
+        } else if (isFiringShort) {
+          result.type = 'SELL';
+          result.confidence = 90;
+          result.reasons.push('Volatilite Sıkışması (Squeeze) aşağı patladı.');
+          result.reasons.push(`MACD İvmesi Negatif (${curHist.toFixed(4)}).`);
+          result.suggestedStopLoss = currentPrice * 1.03;
+          result.suggestedTakeProfit = currentPrice * 0.94;
+        } else {
+          result.reasons.push(`Volatilite Durumu: ${bbUp < kcUp ? 'SIKIŞMA (Squeeze)' : 'NORMAL SERBESTLİK'}.`);
+        }
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 5: REGIME_SWITCHING (ADX Adaptive)
+    // -------------------------------------------------------------
+    case 'REGIME_SWITCHING': {
+      const trendAdx = Number(stratParams.trendAdxThreshold || 25);
+      const chopAdx = Number(stratParams.chopAdxThreshold || 18);
+      const fastEma = calculateEMA(closes, Number(stratParams.emaFast || 12));
+      const slowEma = calculateEMA(closes, Number(stratParams.emaSlow || 50));
+
+      const fNow = fastEma[len - 1] ?? currentPrice;
+      const sNow = slowEma[len - 1] ?? currentPrice;
+
+      if (adx >= trendAdx) {
+        if (fNow > sNow) {
+          result.type = 'BUY';
+          result.confidence = 88;
+          result.reasons.push(`Trend Rejimi: ADX(${adx.toFixed(1)}) >= ${trendAdx} & EMA Boğa Dizilimi.`);
+          result.suggestedStopLoss = sNow * 0.985;
+          result.suggestedTakeProfit = currentPrice * 1.07;
+        } else if (fNow < sNow) {
+          result.type = 'SELL';
+          result.confidence = 88;
+          result.reasons.push(`Trend Rejimi: ADX(${adx.toFixed(1)}) >= ${trendAdx} & EMA Ayı Dizilimi.`);
+          result.suggestedStopLoss = sNow * 1.015;
+          result.suggestedTakeProfit = currentPrice * 0.93;
+        }
+      } else if (adx <= chopAdx) {
+        if (currentRsi < 30) {
+          result.type = 'BUY';
+          result.confidence = 82;
+          result.reasons.push(`Yatay Rejim: ADX(${adx.toFixed(1)}) <= ${chopAdx} & RSI Aşırı Satım (${currentRsi.toFixed(1)}).`);
+          result.suggestedStopLoss = currentPrice * 0.98;
+          result.suggestedTakeProfit = currentPrice * 1.035;
+        } else if (currentRsi > 70) {
+          result.type = 'SELL';
+          result.confidence = 82;
+          result.reasons.push(`Yatay Rejim: ADX(${adx.toFixed(1)}) <= ${chopAdx} & RSI Aşırı Alım (${currentRsi.toFixed(1)}).`);
+          result.suggestedStopLoss = currentPrice * 1.02;
+          result.suggestedTakeProfit = currentPrice * 0.965;
+        }
+      } else {
+        result.reasons.push(`Rejim Nötr Geçiş Bölgesinde (ADX: ${adx.toFixed(1)}).`);
+      }
+      break;
+    }
+
+    // -------------------------------------------------------------
+    // QUANT FAMILY 6: MULTI_FACTOR_QUANT (Composite Alpha Model)
+    // -------------------------------------------------------------
+    case 'MULTI_FACTOR_QUANT': {
+      const ema20 = calculateEMA(closes, 20);
+      const ema50 = calculateEMA(closes, 50);
+      const ema200 = calculateEMA(closes, Math.min(200, closes.length));
+      const macd = calculateMACD(closes, 12, 26, 9);
+      const volSma = calculateSMA(klines.map(k => k.volume), 20);
+
+      const e20 = ema20[len - 1] ?? currentPrice;
+      const e50 = ema50[len - 1] ?? currentPrice;
+      const e200 = ema200[len - 1] ?? currentPrice;
+      const curHist = macd.histogram[len - 1] ?? 0;
+      const curVol = curBar.volume;
+      const avgVol = volSma[len - 1] ?? curVol;
+      const volRatio = avgVol > 0 ? curVol / avgVol : 1;
+
+      let trendFactor = 0;
+      if (currentPrice > e20 && e20 > e50 && currentPrice > e200) trendFactor = 1.0;
+      else if (currentPrice < e20 && e20 < e50 && currentPrice < e200) trendFactor = -1.0;
+      else if (currentPrice > e50) trendFactor = 0.5;
+      else if (currentPrice < e50) trendFactor = -0.5;
+
+      let momFactor = ((currentRsi - 50) / 50) * 0.6 + (curHist > 0 ? 0.4 : -0.4);
+      momFactor = Math.max(-1, Math.min(1, momFactor));
+      const volFactor = Math.min(1, volRatio / 2);
+
+      const alphaScore = (trendFactor * 0.45) + (momFactor * 0.35) + (volFactor * (trendFactor >= 0 ? 0.2 : -0.2));
+      const threshold = Number(stratParams.thresholdScore || 0.60);
+
+      if (alphaScore >= threshold) {
+        result.type = 'BUY';
+        result.confidence = Math.round(alphaScore * 100);
+        result.reasons.push(`Bileşik Alfa Skoru: +${alphaScore.toFixed(2)} >= +${threshold}.`);
+        result.suggestedStopLoss = e50 * 0.985;
+        result.suggestedTakeProfit = currentPrice * 1.075;
+      } else if (alphaScore <= -threshold) {
+        result.type = 'SELL';
+        result.confidence = Math.round(Math.abs(alphaScore) * 100);
+        result.reasons.push(`Bileşik Alfa Skoru: ${alphaScore.toFixed(2)} <= -${threshold}.`);
+        result.suggestedStopLoss = e50 * 1.015;
+        result.suggestedTakeProfit = currentPrice * 0.925;
+      } else {
+        result.reasons.push(`Alfa Skoru: ${alphaScore.toFixed(2)} (Eşik: ±${threshold}).`);
       }
       break;
     }

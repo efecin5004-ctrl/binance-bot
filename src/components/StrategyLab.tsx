@@ -139,7 +139,23 @@ export const StrategyLab: React.FC<StrategyLabProps> = ({
     fetchHistoricalData(dataSymbol, dataInterval, dataLimit);
   }, [dataSymbol, dataInterval, dataLimit]);
 
-  // Execute OOS & Quant Tests whenever data or selected strategy changes
+  // Handle runtime parameter change
+  const handleParameterChange = (paramKey: string, value: number) => {
+    setStrategies(prev => prev.map(s => {
+      if (s.id === selectedStrategyId) {
+        return {
+          ...s,
+          parameters: {
+            ...s.parameters,
+            [paramKey]: value
+          }
+        };
+      }
+      return s;
+    }));
+  };
+
+  // Execute OOS & Quant Tests whenever data or selected strategy / parameters change
   useEffect(() => {
     if (klines.length >= 100 && selectedStrategy) {
       try {
@@ -158,14 +174,17 @@ export const StrategyLab: React.FC<StrategyLabProps> = ({
         // Run Sensitivity for first parameter
         const paramKeys = Object.keys(selectedStrategy.parameters || {});
         if (paramKeys.length > 0) {
-          const sens = runParameterSensitivity(klines, selectedStrategy, paramKeys[0]);
+          const activeParam = sensitivityResult?.parameterName && paramKeys.includes(sensitivityResult.parameterName)
+            ? sensitivityResult.parameterName
+            : paramKeys[0];
+          const sens = runParameterSensitivity(klines, selectedStrategy, activeParam);
           setSensitivityResult(sens);
         }
       } catch (err) {
         console.error('Quant analysis error:', err);
       }
     }
-  }, [klines, selectedStrategyId]);
+  }, [klines, selectedStrategyId, JSON.stringify(selectedStrategy?.parameters)]);
 
   // Run Cross Asset Validation
   const handleRunCrossAsset = async () => {
@@ -407,6 +426,54 @@ export const StrategyLab: React.FC<StrategyLabProps> = ({
           <span>📜 Versiyonlama & Staging</span>
         </button>
       </div>
+
+      {/* Global Strategy Active Context Header for Testing Tabs */}
+      {labTab !== 'library' && labTab !== 'ai_agent' && labTab !== 'versions' && (
+        <div className="bg-slate-900 text-white rounded-xl p-3.5 shadow-sm space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-400 font-bold uppercase tracking-wider">Test Edilen Strateji:</span>
+              <select
+                value={selectedStrategyId}
+                onChange={(e) => setSelectedStrategyId(e.target.value)}
+                className="bg-slate-800 text-white border border-slate-700 rounded-lg px-2.5 py-1 text-xs font-bold font-mono outline-none cursor-pointer hover:bg-slate-750"
+              >
+                {strategies.map(s => (
+                  <option key={s.id} value={s.id}>
+                    [{s.family}] {s.name} (v{s.version})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${familyLabels[selectedStrategy.family].color}`}>
+                {selectedStrategy.family}
+              </span>
+              <span className="text-xs text-slate-400 font-mono">
+                Formül: <code className="text-blue-300 font-bold">{selectedStrategy.mathematicalFormula}</code>
+              </span>
+            </div>
+          </div>
+
+          {/* Interactive Parameters Quick Tuning */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800">
+            <span className="text-[10px] font-mono text-slate-400 font-bold uppercase">Canlı Parametre Ayarı:</span>
+            {Object.entries(selectedStrategy.parameters || {}).map(([pKey, pVal]) => (
+              <div key={pKey} className="flex items-center gap-1 bg-slate-800 border border-slate-700 px-2 py-0.5 rounded text-xs font-mono">
+                <span className="text-slate-300 text-[11px]">{pKey}:</span>
+                <input
+                  type="number"
+                  value={pVal}
+                  onChange={(e) => handleParameterChange(pKey, parseFloat(e.target.value) || 0)}
+                  className="w-16 bg-slate-900 text-blue-400 font-bold px-1.5 py-0.5 rounded text-xs text-center border border-slate-700 outline-none"
+                  step={typeof pVal === 'number' && pVal < 5 ? 0.1 : 1}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: QUANTITATIVE STRATEGY TAXONOMY & LIBRARY */}

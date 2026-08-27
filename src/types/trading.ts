@@ -203,6 +203,9 @@ export interface RiskSettings {
   trailingStopPercent: number; // e.g. 1.5%
   breakevenTriggerPercent: number; // e.g. 1.5% profit moves SL to entry
   killSwitchOnDailyLoss: boolean;
+  signalTimeoutMinutes?: number; // Sinyalin geçerlilik süresi (dakika) - örn: 3 dk sonra bayat sinyal sayılır
+  minSignalConfidence?: number; // Minimum güven puanı (örn: %75)
+  requireFreshCross?: boolean; // Sadece son mumda taze kesişim/kırılım varsa al
 }
 
 export interface BacktestTrade {

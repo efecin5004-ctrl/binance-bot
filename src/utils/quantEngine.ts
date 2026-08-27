@@ -55,6 +55,8 @@ export function runInstitutionalQuantBacktest(
     quantity: number;
     initialMargin: number;
     entryBarIndex: number;
+    stopLoss?: number;
+    takeProfit?: number;
   } | null = null;
 
   let peakEquity = initialBalance;
@@ -67,6 +69,135 @@ export function runInstitutionalQuantBacktest(
     const currentBar = klines[i];
     const closePrice = currentBar.close;
     const time = currentBar.time;
+
+    // 0. INTRA-BAR STOP LOSS & TAKE PROFIT EXECUTION
+    if (activePosition) {
+      if (activePosition.side === 'LONG') {
+        if (activePosition.stopLoss && currentBar.low <= activePosition.stopLoss) {
+          const exitPriceWithSlip = activePosition.stopLoss * (1 - slipRate);
+          const rawPnl = (exitPriceWithSlip - activePosition.entryPrice) * activePosition.quantity;
+          const exitFee = (exitPriceWithSlip * activePosition.quantity) * takerFeeRate;
+          const slippageCost = Math.abs(exitPriceWithSlip - activePosition.stopLoss) * activePosition.quantity;
+
+          totalCommissionPaid += exitFee;
+          totalSlippagePaid += slippageCost;
+          const netPnl = rawPnl - exitFee;
+
+          if (netPnl >= 0) grossProfit += netPnl;
+          else grossLoss += Math.abs(netPnl);
+
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `TR-${trades.length + 1}`,
+            symbol: strategy.defaultSymbol,
+            side: 'LONG',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: exitPriceWithSlip,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'STOP_LOSS',
+            fee: exitFee
+          });
+          activePosition = null;
+        } else if (activePosition.takeProfit && currentBar.high >= activePosition.takeProfit) {
+          const exitPriceWithSlip = activePosition.takeProfit * (1 - slipRate);
+          const rawPnl = (exitPriceWithSlip - activePosition.entryPrice) * activePosition.quantity;
+          const exitFee = (exitPriceWithSlip * activePosition.quantity) * takerFeeRate;
+          const slippageCost = Math.abs(exitPriceWithSlip - activePosition.takeProfit) * activePosition.quantity;
+
+          totalCommissionPaid += exitFee;
+          totalSlippagePaid += slippageCost;
+          const netPnl = rawPnl - exitFee;
+
+          if (netPnl >= 0) grossProfit += netPnl;
+          else grossLoss += Math.abs(netPnl);
+
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `TR-${trades.length + 1}`,
+            symbol: strategy.defaultSymbol,
+            side: 'LONG',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: exitPriceWithSlip,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'TAKE_PROFIT',
+            fee: exitFee
+          });
+          activePosition = null;
+        }
+      } else if (activePosition.side === 'SHORT') {
+        if (activePosition.stopLoss && currentBar.high >= activePosition.stopLoss) {
+          const exitPriceWithSlip = activePosition.stopLoss * (1 + slipRate);
+          const rawPnl = (activePosition.entryPrice - exitPriceWithSlip) * activePosition.quantity;
+          const exitFee = (exitPriceWithSlip * activePosition.quantity) * takerFeeRate;
+          const slippageCost = Math.abs(exitPriceWithSlip - activePosition.stopLoss) * activePosition.quantity;
+
+          totalCommissionPaid += exitFee;
+          totalSlippagePaid += slippageCost;
+          const netPnl = rawPnl - exitFee;
+
+          if (netPnl >= 0) grossProfit += netPnl;
+          else grossLoss += Math.abs(netPnl);
+
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `TR-${trades.length + 1}`,
+            symbol: strategy.defaultSymbol,
+            side: 'SHORT',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: exitPriceWithSlip,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'STOP_LOSS',
+            fee: exitFee
+          });
+          activePosition = null;
+        } else if (activePosition.takeProfit && currentBar.low <= activePosition.takeProfit) {
+          const exitPriceWithSlip = activePosition.takeProfit * (1 + slipRate);
+          const rawPnl = (activePosition.entryPrice - exitPriceWithSlip) * activePosition.quantity;
+          const exitFee = (exitPriceWithSlip * activePosition.quantity) * takerFeeRate;
+          const slippageCost = Math.abs(exitPriceWithSlip - activePosition.takeProfit) * activePosition.quantity;
+
+          totalCommissionPaid += exitFee;
+          totalSlippagePaid += slippageCost;
+          const netPnl = rawPnl - exitFee;
+
+          if (netPnl >= 0) grossProfit += netPnl;
+          else grossLoss += Math.abs(netPnl);
+
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `TR-${trades.length + 1}`,
+            symbol: strategy.defaultSymbol,
+            side: 'SHORT',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: exitPriceWithSlip,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'TAKE_PROFIT',
+            fee: exitFee
+          });
+          activePosition = null;
+        }
+      }
+    }
 
     // Evaluate pure signal using data only up to bar i (Strictly Lookahead Free)
     const signal = evaluateQuantStrategySignal(strategy, klines, i);
@@ -125,7 +256,9 @@ export function runInstitutionalQuantBacktest(
           entryPrice: entryPriceWithSlip,
           quantity,
           initialMargin: tradeCapital,
-          entryBarIndex: i
+          entryBarIndex: i,
+          stopLoss: signal.suggestedStopLoss || (entryPriceWithSlip * 0.96),
+          takeProfit: signal.suggestedTakeProfit || (entryPriceWithSlip * 1.08)
         };
       }
     } else if (signal.type === 'SELL') {
@@ -181,7 +314,9 @@ export function runInstitutionalQuantBacktest(
           entryPrice: entryPriceWithSlip,
           quantity,
           initialMargin: tradeCapital,
-          entryBarIndex: i
+          entryBarIndex: i,
+          stopLoss: signal.suggestedStopLoss || (entryPriceWithSlip * 1.04),
+          takeProfit: signal.suggestedTakeProfit || (entryPriceWithSlip * 0.92)
         };
       }
     }

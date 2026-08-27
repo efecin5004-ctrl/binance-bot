@@ -253,9 +253,20 @@ export function evaluateQuantStrategySignal(
   const currentTime = historySlice[historySlice.length - 1].time;
 
   const params = strategy.parameters || {};
+  const targetId = (strategy.id || '').toLowerCase();
+  const targetFamily = strategy.family || '';
 
-  // 1. DONCHIAN TURTLE BREAKOUT
-  if (strategy.id === 'strat-donchian-turtle') {
+  // Helper matching predicates to support cloned bots (e.g. "bot-strat-donchian-turtle-1234"), custom IDs, and families
+  const isTurtle = targetId.includes('turtle') || targetId.includes('donchian') || targetId === 'strat-donchian-turtle';
+  const isDualEma = targetId.includes('dual-ema') || targetId.includes('ema-macro') || targetId.includes('ema-ribbon') || targetId === 'strat-dual-ema-macro';
+  const isZScore = targetId.includes('zscore') || targetId.includes('mean-reversion') || targetId.includes('rsi-bb') || targetId === 'strat-zscore-mean-reversion';
+  const isSqueeze = targetId.includes('squeeze') || targetId.includes('volatility-squeeze') || targetId === 'strat-volatility-squeeze';
+  const isRegime = targetId.includes('regime') || targetId.includes('adaptive') || targetId === 'strat-regime-adaptive';
+  const isMultiFactor = targetId.includes('multi-factor') || targetId.includes('alpha-score') || targetId === 'strat-multi-factor-quant';
+  const isTsMom = targetId.includes('ts-mom') || targetId.includes('momentum') || targetId === 'strat-ts-mom';
+
+  // 1. DONCHIAN TURTLE BREAKOUT (Trend Following)
+  if (isTurtle || (!isDualEma && !isZScore && !isSqueeze && !isRegime && !isMultiFactor && !isTsMom && targetFamily === 'TREND_FOLLOWING')) {
     const lookbackH = Number(params.lookbackHigh || 20);
     const lookbackL = Number(params.lookbackLow || 20);
     const adxData = calculateADX(historySlice, 14);
@@ -309,8 +320,8 @@ export function evaluateQuantStrategySignal(
     }
   }
 
-  // 2. DUAL EMA MACRO RIBBON
-  if (strategy.id === 'strat-dual-ema-macro') {
+  // 2. DUAL EMA MACRO RIBBON (Trend Following)
+  if (isDualEma) {
     const fastEma = calculateEMA(closes, Number(params.fastEma || 12));
     const slowEma = calculateEMA(closes, Number(params.slowEma || 50));
     const macroEma = calculateEMA(closes, Math.min(Number(params.macroEma || 200), closes.length));
@@ -325,16 +336,16 @@ export function evaluateQuantStrategySignal(
       const isBullishCross = fNow > sNow && fPrev <= sPrev;
       const isBearishCross = fNow < sNow && fPrev >= sPrev;
 
-      if ((isBullishCross || (fNow > sNow && currentPrice > mNow)) && currentPrice > mNow) {
+      if (isBullishCross && currentPrice > mNow) {
         if (strategy.direction !== 'SHORT') {
           return {
             symbol: strategy.defaultSymbol,
             type: 'BUY',
-            confidence: 85,
+            confidence: 88,
             price: currentPrice,
             timestamp: currentTime,
             reasons: [
-              `EMA(${params.fastEma || 12}) > EMA(${params.slowEma || 50}) boğa dizilimi`,
+              `Taze Altın Kesişim (Golden Cross): EMA(${params.fastEma || 12}) > EMA(${params.slowEma || 50})`,
               `Fiyat EMA(${params.macroEma || 200}) makro yükseliş trendi üzerinde`
             ],
             suggestedStopLoss: sNow * 0.98,
@@ -343,16 +354,16 @@ export function evaluateQuantStrategySignal(
             strategyName: strategy.name
           };
         }
-      } else if ((isBearishCross || (fNow < sNow && currentPrice < mNow)) && currentPrice < mNow) {
+      } else if (isBearishCross && currentPrice < mNow) {
         if (strategy.direction !== 'LONG') {
           return {
             symbol: strategy.defaultSymbol,
             type: 'SELL',
-            confidence: 85,
+            confidence: 88,
             price: currentPrice,
             timestamp: currentTime,
             reasons: [
-              `EMA(${params.fastEma || 12}) < EMA(${params.slowEma || 50}) ayı dizilimi`,
+              `Taze Ölüm Kesişimi (Death Cross): EMA(${params.fastEma || 12}) < EMA(${params.slowEma || 50})`,
               `Fiyat EMA(${params.macroEma || 200}) makro düşüş trendi altında`
             ],
             suggestedStopLoss: sNow * 1.02,
@@ -366,7 +377,7 @@ export function evaluateQuantStrategySignal(
   }
 
   // 3. STATISTICAL Z-SCORE & RSI EXTREME MEAN REVERSION
-  if (strategy.id === 'strat-zscore-mean-reversion') {
+  if (isZScore || (!isTurtle && !isDualEma && !isSqueeze && !isRegime && !isMultiFactor && !isTsMom && targetFamily === 'MEAN_REVERSION')) {
     const smaPeriod = Number(params.smaPeriod || 20);
     const zThresh = Number(params.zScoreThreshold || 2.0);
     const rsi = calculateRSI(closes, 14);
@@ -427,8 +438,8 @@ export function evaluateQuantStrategySignal(
     }
   }
 
-  // 4. VOLATILITY SQUEEZE BREAKOUT (TTM)
-  if (strategy.id === 'strat-volatility-squeeze') {
+  // 4. VOLATILITY SQUEEZE BREAKOUT (TTM Squeeze)
+  if (isSqueeze || (!isTurtle && !isDualEma && !isZScore && !isRegime && !isMultiFactor && !isTsMom && targetFamily === 'BREAKOUT_VOLATILITY')) {
     const bb = calculateBollingerBands(closes, Number(params.bbPeriod || 20), Number(params.bbStdDev || 2.0));
     const kc = calculateKeltnerChannels(historySlice, Number(params.kcPeriod || 20), Number(params.kcMultiplier || 1.5));
     const macd = calculateMACD(closes, 12, 26, 9);
@@ -484,7 +495,7 @@ export function evaluateQuantStrategySignal(
   }
 
   // 5. ADX REGIME ADAPTIVE
-  if (strategy.id === 'strat-regime-adaptive') {
+  if (isRegime || (!isTurtle && !isDualEma && !isZScore && !isSqueeze && !isMultiFactor && !isTsMom && targetFamily === 'REGIME_SWITCHING')) {
     const adxData = calculateADX(historySlice, 14);
     const curAdx = adxData.adx[adxData.adx.length - 1] ?? 20;
     const fastEma = calculateEMA(closes, Number(params.emaFast || 12));
@@ -569,7 +580,7 @@ export function evaluateQuantStrategySignal(
   }
 
   // 6. MULTI-FACTOR QUANT SCORE MODEL
-  if (strategy.id === 'strat-multi-factor-quant') {
+  if (isMultiFactor || (!isTurtle && !isDualEma && !isZScore && !isSqueeze && !isRegime && !isTsMom && targetFamily === 'MULTI_FACTOR_QUANT')) {
     const ema20 = calculateEMA(closes, 20);
     const ema50 = calculateEMA(closes, 50);
     const ema200 = calculateEMA(closes, Math.min(200, closes.length));
@@ -640,7 +651,7 @@ export function evaluateQuantStrategySignal(
   }
 
   // 7. TIME SERIES MOMENTUM (TS-MOM)
-  if (strategy.id === 'strat-ts-mom') {
+  if (isTsMom || (!isTurtle && !isDualEma && !isZScore && !isSqueeze && !isRegime && !isMultiFactor && targetFamily === 'MOMENTUM')) {
     const lookback = Number(params.lookbackBars || 24);
     if (historySlice.length > lookback) {
       const pastPrice = closes[closes.length - 1 - lookback];

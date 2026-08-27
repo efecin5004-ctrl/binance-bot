@@ -1,5 +1,7 @@
-import { Kline, StrategyConfig, BacktestResult, BacktestTrade, BacktestEquityPoint } from '../types/trading';
+import { Kline, StrategyConfig, BacktestResult, BacktestTrade, BacktestEquityPoint, SignalResult } from '../types/trading';
 import { evaluateStrategySignal } from './indicators';
+import { QUANT_STRATEGY_REGISTRY, evaluateQuantStrategySignal } from './quantStrategies';
+import { QuantStrategyDefinition } from '../types/quant';
 
 export interface BacktestOptions {
   initialBalance: number;
@@ -30,6 +32,8 @@ export function runBacktest(
     entryPrice: number;
     quantity: number;
     initialMargin: number;
+    stopLoss?: number;
+    takeProfit?: number;
   } | null = null;
 
   const minLookback = 35; // Warmup bars for indicators (EMA, SuperTrend, RSI)
@@ -37,14 +41,141 @@ export function runBacktest(
   const takerFeeRate = (options.takerFeePercent || 0.075) / 100;
   const slipRate = (options.slippagePercent || 0.05) / 100;
 
+  // Resolve whether this is a Quant Registry Strategy or standard config
+  const quantDef = QUANT_STRATEGY_REGISTRY.find(q => 
+    q.id === strategy.quantStrategyId || 
+    q.id === strategy.id ||
+    (strategy.id && strategy.id.toLowerCase().includes(q.id.replace('strat-', ''))) ||
+    q.family === strategy.family ||
+    q.family === (strategy.type as any)
+  );
+
+  const runtimeQuantStrat: QuantStrategyDefinition | null = quantDef ? {
+    ...quantDef,
+    id: strategy.quantStrategyId || strategy.id,
+    name: strategy.name,
+    defaultSymbol: strategy.symbol,
+    timeframe: strategy.timeframe,
+    direction: (strategy.direction || quantDef.direction) as any,
+    parameters: { ...quantDef.parameters, ...(strategy.parameters || {}) }
+  } : null;
+
   for (let i = minLookback; i < klines.length; i++) {
     const currentBar = klines[i];
     const prevSlice = klines.slice(0, i + 1);
     const closePrice = currentBar.close;
     const time = currentBar.time;
 
+    // 1. INTRA-BAR STOP LOSS / TAKE PROFIT CHECK FOR ACTIVE POSITION
+    if (activePosition) {
+      if (activePosition.side === 'LONG') {
+        // Hit Stop Loss
+        if (activePosition.stopLoss && currentBar.low <= activePosition.stopLoss) {
+          const finalExitPrice = activePosition.stopLoss * (1 - slipRate);
+          const rawPnl = (finalExitPrice - activePosition.entryPrice) * activePosition.quantity;
+          const exitFee = (finalExitPrice * activePosition.quantity) * takerFeeRate;
+          const netPnl = rawPnl - exitFee;
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `BT-${trades.length + 1}`,
+            symbol: strategy.symbol,
+            side: 'LONG',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: finalExitPrice,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'STOP_LOSS',
+            fee: exitFee
+          });
+          activePosition = null;
+        } 
+        // Hit Take Profit
+        else if (activePosition.takeProfit && currentBar.high >= activePosition.takeProfit) {
+          const finalExitPrice = activePosition.takeProfit * (1 - slipRate);
+          const rawPnl = (finalExitPrice - activePosition.entryPrice) * activePosition.quantity;
+          const exitFee = (finalExitPrice * activePosition.quantity) * takerFeeRate;
+          const netPnl = rawPnl - exitFee;
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `BT-${trades.length + 1}`,
+            symbol: strategy.symbol,
+            side: 'LONG',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: finalExitPrice,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'TAKE_PROFIT',
+            fee: exitFee
+          });
+          activePosition = null;
+        }
+      } else if (activePosition.side === 'SHORT') {
+        // Hit Stop Loss
+        if (activePosition.stopLoss && currentBar.high >= activePosition.stopLoss) {
+          const finalExitPrice = activePosition.stopLoss * (1 + slipRate);
+          const rawPnl = (activePosition.entryPrice - finalExitPrice) * activePosition.quantity;
+          const exitFee = (finalExitPrice * activePosition.quantity) * takerFeeRate;
+          const netPnl = rawPnl - exitFee;
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `BT-${trades.length + 1}`,
+            symbol: strategy.symbol,
+            side: 'SHORT',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: finalExitPrice,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'STOP_LOSS',
+            fee: exitFee
+          });
+          activePosition = null;
+        }
+        // Hit Take Profit
+        else if (activePosition.takeProfit && currentBar.low <= activePosition.takeProfit) {
+          const finalExitPrice = activePosition.takeProfit * (1 + slipRate);
+          const rawPnl = (activePosition.entryPrice - finalExitPrice) * activePosition.quantity;
+          const exitFee = (finalExitPrice * activePosition.quantity) * takerFeeRate;
+          const netPnl = rawPnl - exitFee;
+          currentBalance += (activePosition.initialMargin + netPnl);
+
+          trades.push({
+            id: `BT-${trades.length + 1}`,
+            symbol: strategy.symbol,
+            side: 'SHORT',
+            entryTime: activePosition.entryTime,
+            entryPrice: activePosition.entryPrice,
+            exitTime: time,
+            exitPrice: finalExitPrice,
+            quantity: activePosition.quantity,
+            pnl: netPnl,
+            pnlPercent: (netPnl / activePosition.initialMargin) * 100,
+            exitReason: 'TAKE_PROFIT',
+            fee: exitFee
+          });
+          activePosition = null;
+        }
+      }
+    }
+
     // Pure Strategy Signal Evaluation (No fake intra-candle assumptions)
-    const signal = evaluateStrategySignal(strategy, prevSlice, closePrice);
+    let signal: SignalResult;
+    if (runtimeQuantStrat) {
+      signal = evaluateQuantStrategySignal(runtimeQuantStrat, prevSlice, i);
+    } else {
+      signal = evaluateStrategySignal(strategy, prevSlice, closePrice);
+    }
 
     if (signal.type === 'BUY') {
       // 1. If currently in SHORT, close SHORT position on BUY reversal signal
@@ -73,7 +204,7 @@ export function runBacktest(
       }
 
       // 2. If flat, open LONG position
-      if (!activePosition) {
+      if (!activePosition && strategy.direction !== 'SHORT') {
         const tradeAmountUsdt = Math.min(currentBalance * posSizePct, currentBalance * 0.98);
 
         if (tradeAmountUsdt > 20 && currentBalance > 50) {
@@ -87,7 +218,9 @@ export function runBacktest(
             entryTime: time,
             entryPrice,
             quantity,
-            initialMargin: tradeAmountUsdt
+            initialMargin: tradeAmountUsdt,
+            stopLoss: signal.suggestedStopLoss || (entryPrice * 0.96),
+            takeProfit: signal.suggestedTakeProfit || (entryPrice * 1.08)
           };
         }
       }
@@ -132,7 +265,9 @@ export function runBacktest(
             entryTime: time,
             entryPrice,
             quantity,
-            initialMargin: tradeAmountUsdt
+            initialMargin: tradeAmountUsdt,
+            stopLoss: signal.suggestedStopLoss || (entryPrice * 1.04),
+            takeProfit: signal.suggestedTakeProfit || (entryPrice * 0.92)
           };
         }
       }
@@ -145,7 +280,7 @@ export function runBacktest(
         ? (closePrice - activePosition.entryPrice) * activePosition.quantity
         : (activePosition.entryPrice - closePrice) * activePosition.quantity;
     }
-    const currentEquity = currentBalance + unrealizedPnl;
+    const currentEquity = currentBalance + (activePosition ? (activePosition.initialMargin + unrealizedPnl) : 0);
 
     if (currentEquity > peakBalance) {
       peakBalance = currentEquity;

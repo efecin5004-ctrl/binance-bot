@@ -157,6 +157,8 @@ export default function App() {
                 positions={positions}
                 orders={orders}
                 closedTrades={closedTrades}
+                signals={signals}
+                signalTimeoutMinutes={riskSettings.signalTimeoutMinutes || 3}
                 onClosePosition={closePosition}
                 onCancelOrder={cancelOrder}
               />

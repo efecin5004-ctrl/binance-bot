@@ -59,7 +59,10 @@ const DEFAULT_RISK: RiskSettings = {
   trailingStopEnabled: true,
   trailingStopPercent: 1.2,
   breakevenTriggerPercent: 1.5,
-  killSwitchOnDailyLoss: true
+  killSwitchOnDailyLoss: true,
+  signalTimeoutMinutes: 3,
+  minSignalConfidence: 75,
+  requireFreshCross: true
 };
 
 export function useTradingEngine() {
@@ -448,8 +451,26 @@ export function useTradingEngine() {
       }
 
       if (signal.type === 'BUY' || signal.type === 'SELL') {
+        // Sinyal Zaman Aşımı (Timeout) ve Tazelik Kontrolleri
+        const maxAgeMs = (riskSettings.signalTimeoutMinutes || 3) * 60 * 1000;
+        const signalAge = signal.timestamp ? Math.abs(now - signal.timestamp) : 0;
+        const isFresh = signalAge <= maxAgeMs;
+        const minConf = riskSettings.minSignalConfidence || 75;
+        const isConfident = signal.confidence >= minConf;
+
         setSignals(prev => [signal, ...prev.slice(0, 20)]);
-        addLog('SIGNAL', `⚡ Sinyal [${signal.type}] - ${strat.name} (Güven: %${signal.confidence})`, signal.reasons);
+
+        if (!isConfident) {
+          addLog('SIGNAL', `⚠️ Sinyal [${signal.type}] Atlandı: Güven skoru (%${signal.confidence}) minimum eşiğin (%${minConf}) altında.`);
+          continue;
+        }
+
+        if (!isFresh) {
+          addLog('SIGNAL', `⏳ Sinyal [${signal.type}] Zaman Aşımı: Sinyal ${Math.round(signalAge / 60000)} dk önce oluştuğu için bayat kabul edildi ve işlem açılmadı.`);
+          continue;
+        }
+
+        addLog('SIGNAL', `⚡ Taze Sinyal [${signal.type}] Onaylandı - ${strat.name} (Güven: %${signal.confidence})`, signal.reasons);
 
         // Auto execute if max positions not exceeded
         if (positions.length < riskSettings.maxOpenPositions) {

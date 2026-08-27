@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Position, Order } from '../types/trading';
-import { ArrowUpRight, ArrowDownRight, X, Clock, Download, Bot, User, Cpu, Zap, Sparkles } from 'lucide-react';
+import { Position, Order, SignalResult } from '../types/trading';
+import { ArrowUpRight, ArrowDownRight, X, Clock, Download, Bot, User, Cpu, Zap, Sparkles, Activity, ShieldAlert } from 'lucide-react';
 
 interface PositionsAndOrdersProps {
   positions: Position[];
   orders: Order[];
   closedTrades: any[];
+  signals?: SignalResult[];
+  signalTimeoutMinutes?: number;
   onClosePosition: (id: string) => void;
   onCancelOrder: (id: string) => void;
 }
@@ -14,10 +16,12 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
   positions,
   orders,
   closedTrades,
+  signals = [],
+  signalTimeoutMinutes = 3,
   onClosePosition,
   onCancelOrder
 }) => {
-  const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history'>('positions');
+  const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history' | 'signals'>('positions');
 
   const totalUnrealizedPnl = positions.reduce((acc, p) => acc + p.pnl, 0);
   const totalRealizedPnl = closedTrades.reduce((acc, t) => acc + t.pnl, 0);
@@ -75,6 +79,18 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
               <span>İşlem Geçmişi</span>
               <span className="px-1.5 py-0.2 rounded-full bg-slate-200 text-[10px] text-slate-700 font-mono">
                 {closedTrades.length}
+              </span>
+            </button>
+            <button
+              onClick={() => setActiveTab('signals')}
+              className={`px-3 py-1 rounded font-semibold transition flex items-center gap-1.5 ${
+                activeTab === 'signals' ? 'bg-white text-slate-900 font-bold shadow-xs' : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 text-amber-500" />
+              <span>Sinyal Akışı & Timeout</span>
+              <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-[10px] text-amber-800 font-mono">
+                {signals.length}
               </span>
             </button>
           </div>
@@ -380,6 +396,84 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
                 })}
               </tbody>
             </table>
+          )
+        )}
+
+        {/* SIGNALS STREAM TAB */}
+        {activeTab === 'signals' && (
+          signals.length === 0 ? (
+            <div className="h-44 flex flex-col items-center justify-center text-slate-400 text-xs gap-2">
+              <Activity className="w-6 h-6 text-slate-300" />
+              <p className="text-slate-600 font-medium">Henüz üretilen bir strateji sinyali bulunmuyor.</p>
+              <p className="text-[11px] text-slate-400">Bot çalıştığında stratejiler mum grafiklerini tarayıp canlı sinyal üretecektir.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded border border-amber-200 text-amber-900 text-[11px]">
+                <span>⏱️ <b>Sinyal Zaman Aşımı Eşiği:</b> {signalTimeoutMinutes} Dakika (Bu süreden eski sinyaller bayat sayılır ve otomatik emir açmaz)</span>
+              </div>
+              <table className="w-full text-left text-xs font-mono">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-400 text-[10px] uppercase font-sans">
+                    <th className="py-2 px-3">Zaman</th>
+                    <th className="py-2 px-3">Strateji Adı</th>
+                    <th className="py-2 px-3">Sembol</th>
+                    <th className="py-2 px-3">Sinyal Yönü</th>
+                    <th className="py-2 px-3">Sinyal Fiyatı</th>
+                    <th className="py-2 px-3">Güven Skoru</th>
+                    <th className="py-2 px-3">Zaman Aşımı Durumu</th>
+                    <th className="py-2 px-3">Gerekçe / Filtre</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {signals.map((sig, idx) => {
+                    const now = Date.now();
+                    const ageMs = Math.abs(now - (sig.timestamp || now));
+                    const ageMinutes = Math.round(ageMs / 60000);
+                    const isStale = ageMinutes > signalTimeoutMinutes;
+
+                    return (
+                      <tr key={idx} className="hover:bg-slate-50 transition">
+                        <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                          {sig.timestamp ? new Date(sig.timestamp).toLocaleTimeString() : 'Anlık'}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-slate-900 font-sans">
+                          {sig.strategyName || 'Algoritmik Strateji'}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold">{sig.symbol}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            sig.type === 'BUY' ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-rose-700 bg-rose-50 border border-rose-200'
+                          }`}>
+                            {sig.type === 'BUY' ? 'AL (LONG)' : 'SAT (SHORT)'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-slate-900">${sig.price?.toFixed(2)}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-bold text-blue-600">%{sig.confidence}</span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          {isStale ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+                              <Clock className="w-3 h-3 text-rose-500" />
+                              Zaman Aşımı ({ageMinutes} dk önce)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                              <Zap className="w-3 h-3 text-emerald-500" />
+                              Taze ({ageMinutes === 0 ? 'Yeni' : `${ageMinutes} dk`})
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600 text-[11px] font-sans">
+                          {sig.reasons && sig.reasons.length > 0 ? sig.reasons[0] : 'Teknik İndikatör Kırılımı'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           )
         )}
       </div>
