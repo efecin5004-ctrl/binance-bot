@@ -115,20 +115,50 @@ export const RiskManager: React.FC<RiskManagerProps> = ({
             </div>
 
             {riskSettings.positionSizingMode === 'PERCENT_PORTFOLIO' && (
-              <div>
-                <div className="flex justify-between text-[11px] mb-1">
-                  <span className="text-slate-600">Her İşlem İçin Kasa Yüzdesi:</span>
-                  <span className="font-bold text-slate-900 font-mono">%{riskSettings.percentPortfolio}</span>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-slate-600 font-semibold">Her İşlem İçin Kasa Yüzdesi:</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-slate-500 font-mono">%</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value={riskSettings.percentPortfolio}
+                      onChange={(e) => handleChange('percentPortfolio', Math.min(100, Math.max(1, parseFloat(e.target.value) || 1)))}
+                      className="w-16 px-2 py-0.5 text-right font-bold text-slate-900 font-mono bg-white border border-slate-300 rounded focus:border-blue-500 outline-none"
+                    />
+                  </div>
                 </div>
                 <input
                   type="range"
                   min="1"
-                  max="25"
-                  step="0.5"
+                  max="100"
+                  step="1"
                   value={riskSettings.percentPortfolio}
                   onChange={(e) => handleChange('percentPortfolio', parseFloat(e.target.value))}
                   className="w-full accent-blue-600"
                 />
+                <div className="flex items-center justify-between gap-1 text-[10px]">
+                  {[10, 25, 50, 80, 100].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => handleChange('percentPortfolio', pct)}
+                      className={`flex-1 py-1 rounded border font-mono font-bold transition ${
+                        riskSettings.percentPortfolio === pct
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      %{pct}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] text-slate-500 block">
+                  Bot sinyal aldığında mevcut bakiyenin <b>%{riskSettings.percentPortfolio}</b> kadarıyla (≈ ${(paperBalance * (riskSettings.percentPortfolio / 100)).toFixed(2)}) işleme girer.
+                </span>
               </div>
             )}
 

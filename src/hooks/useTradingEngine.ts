@@ -458,7 +458,15 @@ export function useTradingEngine() {
         const minConf = riskSettings.minSignalConfidence || 75;
         const isConfident = signal.confidence >= minConf;
 
-        setSignals(prev => [signal, ...prev.slice(0, 20)]);
+        // Deduplicate consecutive identical signals within 30s to prevent stream spamming
+        setSignals(prev => {
+          const isDuplicate = prev.length > 0 &&
+            prev[0].strategyName === signal.strategyName &&
+            prev[0].type === signal.type &&
+            (now - (prev[0].timestamp || 0)) < 30000;
+          if (isDuplicate) return prev;
+          return [signal, ...prev.slice(0, 25)];
+        });
 
         if (!isConfident) {
           addLog('SIGNAL', `⚠️ Sinyal [${signal.type}] Atlandı: Güven skoru (%${signal.confidence}) minimum eşiğin (%${minConf}) altında.`);
@@ -498,8 +506,8 @@ export function useTradingEngine() {
       orderSizeUsdt = stopDistance > 0 ? (riskPerTrade / stopDistance) * currentPrice : 150;
     }
 
-    // Guard minimum and maximum
-    orderSizeUsdt = Math.max(25, Math.min(orderSizeUsdt, paperBalance * 0.8));
+    // Guard minimum and maximum (allow up to 100% of available paper balance)
+    orderSizeUsdt = Math.max(10, Math.min(orderSizeUsdt, paperBalance));
 
     const side = signal.type === 'BUY' ? 'LONG' : 'SHORT';
     const quantity = parseFloat((orderSizeUsdt / currentPrice).toFixed(6));

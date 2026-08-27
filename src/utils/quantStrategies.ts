@@ -250,7 +250,10 @@ export function evaluateQuantStrategySignal(
   const lows = historySlice.map(k => k.low);
   const volumes = historySlice.map(k => k.volume);
   const currentPrice = closes[closes.length - 1];
-  const currentTime = historySlice[historySlice.length - 1].time;
+  // If evaluating live (default latest bar), use current wall-clock time so timeout calculations are accurate.
+  // If evaluating a historical bar in backtest, use the bar timestamp.
+  const isHistoricalEvaluation = currentIndex !== undefined && currentIndex < klines.length - 1;
+  const currentTime = isHistoricalEvaluation ? historySlice[historySlice.length - 1].time : Date.now();
 
   const params = strategy.parameters || {};
   const targetId = (strategy.id || '').toLowerCase();
