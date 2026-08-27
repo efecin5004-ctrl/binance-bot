@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Position, Order, SignalResult } from '../types/trading';
-import { ArrowUpRight, ArrowDownRight, X, Clock, Download, Bot, User, Cpu, Zap, Sparkles, Activity, ShieldAlert } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, X, Clock, Download, Bot, User, Cpu, Zap, Sparkles, Activity, ShieldAlert, Timer, AlertCircle } from 'lucide-react';
 
 interface PositionsAndOrdersProps {
   positions: Position[];
@@ -22,6 +22,15 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
   onCancelOrder
 }) => {
   const [activeTab, setActiveTab] = useState<'positions' | 'orders' | 'history' | 'signals'>('positions');
+  const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  // Real-time ticking interval for live countdown TTL indicators
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const totalUnrealizedPnl = positions.reduce((acc, p) => acc + p.pnl, 0);
   const totalRealizedPnl = closedTrades.reduce((acc, t) => acc + t.pnl, 0);
@@ -408,71 +417,145 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
               <p className="text-[11px] text-slate-400">Bot çalıştığında stratejiler mum grafiklerini tarayıp canlı sinyal üretecektir.</p>
             </div>
           ) : (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-2 py-1 bg-amber-50 rounded border border-amber-200 text-amber-900 text-[11px]">
-                <span>⏱️ <b>Sinyal Zaman Aşımı Eşiği:</b> {signalTimeoutMinutes} Dakika (Bu süreden eski sinyaller bayat sayılır ve otomatik emir açmaz)</span>
+            <div className="space-y-3">
+              {/* Header Stats Bar */}
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="p-1 rounded bg-amber-100 text-amber-800">
+                    <Timer className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <span className="font-bold text-slate-900">Sinyal Zaman Aşımı (TTL): {signalTimeoutMinutes} Dakika</span>
+                    <span className="text-[11px] text-slate-500 block">Süresi dolan eski sinyaller için bot otomatik alım yapmaz ve emri iptal sayar.</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 font-mono text-[11px]">
+                  <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold flex items-center gap-1">
+                    <Zap className="w-3 h-3 text-emerald-600" />
+                    {signals.filter(s => {
+                      const ageMs = Math.abs(currentTime - (s.timestamp || currentTime));
+                      return ageMs <= (signalTimeoutMinutes * 60 * 1000);
+                    }).length} Aktif/Taze
+                  </span>
+                  <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200 font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-slate-500" />
+                    {signals.filter(s => {
+                      const ageMs = Math.abs(currentTime - (s.timestamp || currentTime));
+                      return ageMs > (signalTimeoutMinutes * 60 * 1000);
+                    }).length} Süresi Dolan
+                  </span>
+                </div>
               </div>
-              <table className="w-full text-left text-xs font-mono">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-400 text-[10px] uppercase font-sans">
-                    <th className="py-2 px-3">Zaman</th>
-                    <th className="py-2 px-3">Strateji Adı</th>
-                    <th className="py-2 px-3">Sembol</th>
-                    <th className="py-2 px-3">Sinyal Yönü</th>
-                    <th className="py-2 px-3">Sinyal Fiyatı</th>
-                    <th className="py-2 px-3">Güven Skoru</th>
-                    <th className="py-2 px-3">Zaman Aşımı Durumu</th>
-                    <th className="py-2 px-3">Gerekçe / Filtre</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {signals.map((sig, idx) => {
-                    const now = Date.now();
-                    const ageMs = Math.abs(now - (sig.timestamp || now));
-                    const ageMinutes = Math.round(ageMs / 60000);
-                    const isStale = ageMinutes > signalTimeoutMinutes;
 
-                    return (
-                      <tr key={idx} className="hover:bg-slate-50 transition">
-                        <td className="py-2.5 px-3 text-slate-500 text-[11px]">
-                          {sig.timestamp ? new Date(sig.timestamp).toLocaleTimeString() : 'Anlık'}
-                        </td>
-                        <td className="py-2.5 px-3 font-bold text-slate-900 font-sans">
-                          {sig.strategyName || 'Algoritmik Strateji'}
-                        </td>
-                        <td className="py-2.5 px-3 font-bold">{sig.symbol}</td>
-                        <td className="py-2.5 px-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            sig.type === 'BUY' ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-rose-700 bg-rose-50 border border-rose-200'
-                          }`}>
-                            {sig.type === 'BUY' ? 'AL (LONG)' : 'SAT (SHORT)'}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 font-bold text-slate-900">${sig.price?.toFixed(2)}</td>
-                        <td className="py-2.5 px-3">
-                          <span className="font-bold text-blue-600">%{sig.confidence}</span>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          {isStale ? (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
-                              <Clock className="w-3 h-3 text-rose-500" />
-                              Zaman Aşımı ({ageMinutes} dk önce)
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 text-[10px] uppercase font-sans">
+                      <th className="py-2 px-3">Zaman</th>
+                      <th className="py-2 px-3">Strateji Adı</th>
+                      <th className="py-2 px-3">Sembol</th>
+                      <th className="py-2 px-3">Sinyal Yönü</th>
+                      <th className="py-2 px-3">Sinyal Fiyatı</th>
+                      <th className="py-2 px-3">Güven Skoru</th>
+                      <th className="py-2 px-3 min-w-[150px]">Kalan Süre (TTL Countdown)</th>
+                      <th className="py-2 px-3">Durum</th>
+                      <th className="py-2 px-3">Gerekçe / Filtre</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {signals.map((sig, idx) => {
+                      const timeoutMs = (signalTimeoutMinutes || 3) * 60 * 1000;
+                      const sigTime = sig.timestamp || currentTime;
+                      const elapsedMs = Math.max(0, currentTime - sigTime);
+                      const remainingMs = Math.max(0, timeoutMs - elapsedMs);
+                      const isExpired = remainingMs <= 0;
+                      const remainingSec = Math.ceil(remainingMs / 1000);
+                      const minutesLeft = Math.floor(remainingSec / 60);
+                      const secondsLeft = remainingSec % 60;
+                      const formattedCountdown = `${String(minutesLeft).padStart(2, '0')}:${String(secondsLeft).padStart(2, '0')}`;
+                      const ttlPercentage = Math.max(0, Math.min(100, (remainingMs / timeoutMs) * 100));
+
+                      // Color coding based on remaining TTL
+                      let ttlColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                      let barColor = 'bg-emerald-500';
+                      if (isExpired) {
+                        ttlColor = 'text-slate-500 bg-slate-100 border-slate-200';
+                        barColor = 'bg-slate-300';
+                      } else if (ttlPercentage < 25) {
+                        ttlColor = 'text-rose-700 bg-rose-50 border-rose-200 animate-pulse';
+                        barColor = 'bg-rose-500';
+                      } else if (ttlPercentage < 50) {
+                        ttlColor = 'text-amber-700 bg-amber-50 border-amber-200';
+                        barColor = 'bg-amber-500';
+                      }
+
+                      return (
+                        <tr key={idx} className={`hover:bg-slate-50 transition ${isExpired ? 'opacity-75 bg-slate-50/50' : ''}`}>
+                          <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                            {sig.timestamp ? new Date(sig.timestamp).toLocaleTimeString() : 'Anlık'}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900 font-sans">
+                            {sig.strategyName || 'Algoritmik Strateji'}
+                          </td>
+                          <td className="py-2.5 px-3 font-bold">{sig.symbol}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              sig.type === 'BUY' ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' : 'text-rose-700 bg-rose-50 border border-rose-200'
+                            }`}>
+                              {sig.type === 'BUY' ? 'AL (LONG)' : 'SAT (SHORT)'}
                             </span>
-                          ) : (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
-                              <Zap className="w-3 h-3 text-emerald-500" />
-                              Taze ({ageMinutes === 0 ? 'Yeni' : `${ageMinutes} dk`})
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-600 text-[11px] font-sans">
-                          {sig.reasons && sig.reasons.length > 0 ? sig.reasons[0] : 'Teknik İndikatör Kırılımı'}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          </td>
+                          <td className="py-2.5 px-3 font-bold text-slate-900">${sig.price?.toFixed(2)}</td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-bold text-blue-600">%{sig.confidence}</span>
+                          </td>
+
+                          {/* TTL COUNTDOWN & PROGRESS BAR */}
+                          <td className="py-2.5 px-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-bold font-mono ${ttlColor}`}>
+                                  <Timer className="w-3 h-3" />
+                                  {isExpired ? '00:00' : formattedCountdown}
+                                </span>
+                                <span className="text-[10px] font-mono text-slate-400">
+                                  {isExpired ? 'Doldu' : `%${Math.round(ttlPercentage)}`}
+                                </span>
+                              </div>
+                              {/* Progress bar */}
+                              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden border border-slate-200">
+                                <div
+                                  className={`h-full transition-all duration-300 ${barColor}`}
+                                  style={{ width: `${ttlPercentage}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* STATUS */}
+                          <td className="py-2.5 px-3">
+                            {isExpired ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 text-[10px] font-bold">
+                                <AlertCircle className="w-3 h-3 text-rose-500" />
+                                Zaman Aşımı
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                                <Zap className="w-3 h-3 text-emerald-500" />
+                                Canlı / Geçerli
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 text-slate-600 text-[11px] font-sans">
+                            {sig.reasons && sig.reasons.length > 0 ? sig.reasons[0] : 'Teknik İndikatör Kırılımı'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )
         )}
