@@ -17,6 +17,7 @@ import { getKlines, get24hrTicker, getOrderBookDepth, getRecentTrades, executeBi
 import { computeAllIndicators, evaluateStrategySignal } from '../utils/indicators';
 import { QUANT_STRATEGY_REGISTRY, evaluateQuantStrategySignal } from '../utils/quantStrategies';
 import { QuantStrategyDefinition } from '../types/quant';
+import { initAuth, subscribeToCloudBotState, saveCloudBotState, getDeviceId, CloudBotState } from '../services/firebase';
 
 // Convert all institutional Quantitative Lab strategies into deployable bot configs
 export const DEFAULT_QUANT_BOTS: StrategyConfig[] = QUANT_STRATEGY_REGISTRY.map(qs => ({
@@ -161,6 +162,11 @@ export function useTradingEngine() {
   // Audio alerts ref
   const soundEnabledRef = useRef<boolean>(true);
 
+  // Cloud Database Sync State
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'CONNECTED' | 'SYNCING' | 'OFFLINE'>('SYNCING');
+  const isRemoteUpdatingRef = useRef<boolean>(false);
+  const myDeviceIdRef = useRef<string>(getDeviceId());
+
   // Helper to add structured logs
   const addLog = useCallback((level: LogEntry['level'], message: string, details?: any) => {
     const entry: LogEntry = {
@@ -173,42 +179,127 @@ export function useTradingEngine() {
     setLogs(prev => [entry, ...prev.slice(0, 400)]);
   }, []);
 
-  // Persist State to LocalStorage
+  // Initialize Firebase Auth and real-time subscription across all devices
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+
+    initAuth()
+      .then(() => {
+        setCloudSyncStatus('CONNECTED');
+        addLog('INFO', '☁️ Firebase Cloud Database bağlantısı kuruldu (Cihazlar arası canlı senkronizasyon aktif).');
+
+        unsubscribe = subscribeToCloudBotState(
+          (cloudState) => {
+            if (!cloudState) return;
+
+            // If updated by another device or initial sync
+            if (cloudState.updatedByDeviceId !== myDeviceIdRef.current) {
+              isRemoteUpdatingRef.current = true;
+
+              if (typeof cloudState.paperBalance === 'number') setPaperBalance(cloudState.paperBalance);
+              if (typeof cloudState.dailyStartBalance === 'number') setDailyStartBalance(cloudState.dailyStartBalance);
+              if (cloudState.botStatus) setBotStatus(cloudState.botStatus);
+              if (cloudState.tradingMode) setTradingMode(cloudState.tradingMode);
+              if (Array.isArray(cloudState.positions)) setPositions(cloudState.positions);
+              if (Array.isArray(cloudState.orders)) setOrders(cloudState.orders);
+              if (Array.isArray(cloudState.closedTrades)) setClosedTrades(cloudState.closedTrades);
+              if (Array.isArray(cloudState.strategies) && cloudState.strategies.length > 0) setStrategies(cloudState.strategies);
+              if (cloudState.riskSettings) setRiskSettings(cloudState.riskSettings);
+              if (cloudState.apiCredentials) setApiCredentials(cloudState.apiCredentials);
+              if (cloudState.telegramSettings) setTelegramSettings(cloudState.telegramSettings);
+              if (cloudState.selectedSymbol) setSelectedSymbol(cloudState.selectedSymbol);
+              if (cloudState.selectedTimeframe) setSelectedTimeframe(cloudState.selectedTimeframe);
+
+              setTimeout(() => {
+                isRemoteUpdatingRef.current = false;
+              }, 100);
+            }
+          },
+          (err) => {
+            console.error('Cloud state sync error:', err);
+            setCloudSyncStatus('OFFLINE');
+          }
+        );
+      })
+      .catch((err) => {
+        console.error('Firebase init error:', err);
+        setCloudSyncStatus('OFFLINE');
+      });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, [addLog]);
+
+  // Persist State to LocalStorage & Firebase Cloud Firestore
   useEffect(() => {
     localStorage.setItem('bbot_paper_balance', paperBalance.toString());
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ paperBalance });
+    }
   }, [paperBalance]);
 
   useEffect(() => {
     localStorage.setItem('bbot_daily_start_bal', dailyStartBalance.toString());
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ dailyStartBalance });
+    }
   }, [dailyStartBalance]);
 
   useEffect(() => {
     localStorage.setItem('bbot_strategies_v2', JSON.stringify(strategies));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ strategies });
+    }
   }, [strategies]);
 
   useEffect(() => {
     localStorage.setItem('bbot_positions', JSON.stringify(positions));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ positions });
+    }
   }, [positions]);
 
   useEffect(() => {
     localStorage.setItem('bbot_orders', JSON.stringify(orders));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ orders });
+    }
   }, [orders]);
 
   useEffect(() => {
     localStorage.setItem('bbot_closed_trades', JSON.stringify(closedTrades));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ closedTrades });
+    }
   }, [closedTrades]);
 
   useEffect(() => {
     localStorage.setItem('bbot_risk', JSON.stringify(riskSettings));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ riskSettings });
+    }
   }, [riskSettings]);
 
   useEffect(() => {
     localStorage.setItem('bbot_api_creds', JSON.stringify(apiCredentials));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ apiCredentials });
+    }
   }, [apiCredentials]);
 
   useEffect(() => {
     localStorage.setItem('bbot_telegram', JSON.stringify(telegramSettings));
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ telegramSettings });
+    }
   }, [telegramSettings]);
+
+  useEffect(() => {
+    if (!isRemoteUpdatingRef.current) {
+      saveCloudBotState({ botStatus, tradingMode, selectedSymbol, selectedTimeframe });
+    }
+  }, [botStatus, tradingMode, selectedSymbol, selectedTimeframe]);
 
   // Send Telegram Notification Helper
   const sendAlert = useCallback(async (msg: string) => {
@@ -820,6 +911,7 @@ export function useTradingEngine() {
     cancelOrder,
     placeManualOrder,
     resetPaperAccount,
+    cloudSyncStatus,
     refreshMarket: fetchMarketData
   };
 }

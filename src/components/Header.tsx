@@ -15,7 +15,10 @@ import {
   RefreshCw,
   BarChart3,
   Sparkles,
-  Shield
+  Shield,
+  Cloud,
+  CloudCheck,
+  CloudOff
 } from 'lucide-react';
 import { MarketTicker } from '../types/trading';
 
@@ -38,6 +41,7 @@ interface HeaderProps {
   onOpenLogs: () => void;
   onRefreshMarket: () => void;
   logsCount: number;
+  cloudSyncStatus?: 'CONNECTED' | 'SYNCING' | 'OFFLINE';
 }
 
 const QUICK_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'AVAXUSDT', 'NEARUSDT'];
@@ -60,7 +64,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenLogs,
   onRefreshMarket,
-  logsCount
+  logsCount,
+  cloudSyncStatus = 'CONNECTED'
 }) => {
   const [showKillConfirm, setShowKillConfirm] = useState(false);
   const isPositive = (ticker?.priceChangePercent || 0) >= 0;
@@ -82,6 +87,24 @@ export const Header: React.FC<HeaderProps> = ({
               </div>
               <p className="text-[10px] text-slate-500 font-mono">Algoritmik Ticaret Terminali</p>
             </div>
+          </div>
+
+          {/* Cloud Database Sync Pill */}
+          <div 
+            title="Bulut Veritabanı (Firebase): Mobil telefon ve masaüstü bilgisayarınız anlık olarak tek bir canlı veritabanına bağlıdır."
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
+              cloudSyncStatus === 'CONNECTED'
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : cloudSyncStatus === 'SYNCING'
+                ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
+                : 'bg-slate-100 text-slate-600 border-slate-200'
+            }`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              cloudSyncStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' :
+              cloudSyncStatus === 'SYNCING' ? 'bg-blue-500' : 'bg-slate-400'
+            }`} />
+            <span>Bulut DB Senkronize</span>
           </div>
 
           {/* Symbol Select */}

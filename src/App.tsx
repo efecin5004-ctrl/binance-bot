@@ -54,6 +54,7 @@ export default function App() {
     cancelOrder,
     placeManualOrder,
     resetPaperAccount,
+    cloudSyncStatus,
     refreshMarket
   } = useTradingEngine();
 
@@ -89,6 +90,7 @@ export default function App() {
         onOpenLogs={() => setIsLogsOpen(true)}
         onRefreshMarket={refreshMarket}
         logsCount={logs.length}
+        cloudSyncStatus={cloudSyncStatus}
       />
 
       {/* Main Workspace Body */}
