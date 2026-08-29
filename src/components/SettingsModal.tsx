@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ApiCredentials, TelegramSettings } from '../types/trading';
 import { testBinanceApiConnection, sendTelegramNotification } from '../services/api';
-import { Settings, Key, Shield, Send, CheckCircle2, AlertCircle, RefreshCw, X, Download, Upload, RotateCcw } from 'lucide-react';
+import { Settings, Key, Shield, Send, CheckCircle2, AlertCircle, RefreshCw, X, RotateCcw, Save, Check } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -24,13 +24,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onResetPaperAccount,
   paperBalance
 }) => {
-  const [apiKey, setApiKey] = useState(apiCredentials.apiKey);
-  const [apiSecret, setApiSecret] = useState(apiCredentials.apiSecret);
-  const [isTestnet, setIsTestnet] = useState(apiCredentials.isTestnet);
+  const [apiKey, setApiKey] = useState(apiCredentials.apiKey || '');
+  const [apiSecret, setApiSecret] = useState(apiCredentials.apiSecret || '');
+  const [isTestnet, setIsTestnet] = useState(apiCredentials.isTestnet ?? true);
 
-  const [telegramToken, setTelegramToken] = useState(telegramSettings.botToken);
-  const [telegramChatId, setTelegramChatId] = useState(telegramSettings.chatId);
-  const [telegramEnabled, setTelegramEnabled] = useState(telegramSettings.enabled);
+  const [telegramToken, setTelegramToken] = useState(telegramSettings.botToken || '');
+  const [telegramChatId, setTelegramChatId] = useState(telegramSettings.chatId || '');
+  const [telegramEnabled, setTelegramEnabled] = useState(telegramSettings.enabled ?? false);
 
   const [isTestingApi, setIsTestingApi] = useState(false);
   const [apiTestResult, setApiTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -38,19 +38,75 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isTestingTelegram, setIsTestingTelegram] = useState(false);
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
+  const [savedBanner, setSavedBanner] = useState<string | null>(null);
+
+  // Sync internal form state whenever modal is opened or props update
+  useEffect(() => {
+    if (isOpen) {
+      setApiKey(apiCredentials.apiKey || '');
+      setApiSecret(apiCredentials.apiSecret || '');
+      setIsTestnet(apiCredentials.isTestnet ?? true);
+      setTelegramToken(telegramSettings.botToken || '');
+      setTelegramChatId(telegramSettings.chatId || '');
+      setTelegramEnabled(telegramSettings.enabled ?? false);
+      setApiTestResult(null);
+      setTelegramTestResult(null);
+      setSavedBanner(null);
+    }
+  }, [isOpen, apiCredentials, telegramSettings]);
+
   if (!isOpen) return null;
+
+  // Primary Save Function
+  const handleSaveAll = () => {
+    const updatedCreds: ApiCredentials = {
+      ...apiCredentials,
+      apiKey: apiKey.trim(),
+      apiSecret: apiSecret.trim(),
+      isTestnet,
+      lastChecked: Date.now()
+    };
+
+    const updatedTelegram: TelegramSettings = {
+      ...telegramSettings,
+      enabled: telegramEnabled,
+      botToken: telegramToken.trim(),
+      chatId: telegramChatId.trim()
+    };
+
+    onUpdateApiCredentials(updatedCreds);
+    onUpdateTelegramSettings(updatedTelegram);
+
+    setSavedBanner('✅ Tüm ayarlar başarıyla kaydedildi ve kalıcı hafızaya alındı.');
+    setTimeout(() => {
+      setSavedBanner(null);
+    }, 4000);
+  };
+
+  const handleCloseAndSave = () => {
+    handleSaveAll();
+    onClose();
+  };
 
   const handleTestAndSaveApi = async () => {
     setIsTestingApi(true);
     setApiTestResult(null);
 
+    // Save immediate input values first
+    onUpdateApiCredentials({
+      ...apiCredentials,
+      apiKey: apiKey.trim(),
+      apiSecret: apiSecret.trim(),
+      isTestnet
+    });
+
     try {
-      const res = await testBinanceApiConnection(apiKey, apiSecret, isTestnet);
+      const res = await testBinanceApiConnection(apiKey.trim(), apiSecret.trim(), isTestnet);
       if (res.success) {
         setApiTestResult({ success: true, message: `Bağlantı Başarılı! Hesap Türü: ${res.accountType || 'SPOT'}, İşlem İzni: ${res.canTrade ? 'EVET' : 'HAYIR'}` });
         onUpdateApiCredentials({
-          apiKey,
-          apiSecret,
+          apiKey: apiKey.trim(),
+          apiSecret: apiSecret.trim(),
           isTestnet,
           isConnected: true,
           canTrade: res.canTrade,
@@ -70,10 +126,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsTestingTelegram(true);
     setTelegramTestResult(null);
 
+    onUpdateTelegramSettings({
+      ...telegramSettings,
+      enabled: telegramEnabled,
+      botToken: telegramToken.trim(),
+      chatId: telegramChatId.trim()
+    });
+
     try {
       const res = await sendTelegramNotification(
-        telegramToken,
-        telegramChatId,
+        telegramToken.trim(),
+        telegramChatId.trim(),
         '🤖 <b>Binance Quant Bot Bildirim Testi:</b>\nTelegram entegrasyonu başarıyla doğrulandı ve aktif edildi!'
       );
 
@@ -82,8 +145,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateTelegramSettings({
           ...telegramSettings,
           enabled: telegramEnabled,
-          botToken: telegramToken,
-          chatId: telegramChatId
+          botToken: telegramToken.trim(),
+          chatId: telegramChatId.trim()
         });
       } else {
         setTelegramTestResult({ success: false, message: res.message || 'Telegram mesajı iletilemedi. Token ve Chat ID kontrol edin.' });
@@ -104,10 +167,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <Settings className="w-5 h-5 text-blue-600" />
             <h2 className="text-base font-bold text-slate-900 uppercase tracking-wider">Sistem Ayarları & Entegrasyonlar</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition">
+          <button onClick={handleCloseAndSave} className="p-1.5 rounded-lg bg-slate-100 text-slate-500 hover:text-slate-900 hover:bg-slate-200 transition">
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Global Saved Notification */}
+        {savedBanner && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-bold text-emerald-800 flex items-center gap-2 shadow-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{savedBanner}</span>
+          </div>
+        )}
 
         {/* Section 1: Binance API Credentials */}
         <div className="space-y-4 bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs">
@@ -174,7 +245,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg transition flex items-center justify-center gap-2 shadow-xs"
           >
             {isTestingApi ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Shield className="w-4 h-4" />}
-            <span>Binance Bağlantısını Test Et & Kaydet</span>
+            <span>Binance Bağlantısını Test Et & Doğrula</span>
           </button>
         </div>
 
@@ -236,7 +307,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             className="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-lg transition flex items-center justify-center gap-2 shadow-xs"
           >
             {isTestingTelegram ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            <span>Telegram Bildirimini Test Et & Kaydet</span>
+            <span>Telegram Bildirimini Test Et</span>
           </button>
         </div>
 
@@ -257,11 +328,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end pt-2 border-t border-slate-200">
+        {/* Footer with Explicit Save and Close Buttons */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-200">
           <button
-            onClick={onClose}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition shadow-xs"
+            onClick={handleSaveAll}
+            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition shadow-xs flex items-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            <span>Ayarları Kaydet</span>
+          </button>
+
+          <button
+            onClick={handleCloseAndSave}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs transition shadow-xs"
           >
             Tamamla & Kapat
           </button>

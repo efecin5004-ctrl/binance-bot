@@ -194,6 +194,31 @@ export const RiskManager: React.FC<RiskManagerProps> = ({
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className="text-slate-600 block mb-1">Maksimum Drawdown (%)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={riskSettings.maxDrawdownPercent}
+                  onChange={(e) => handleChange('maxDrawdownPercent', parseFloat(e.target.value) || 15)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-900 font-mono focus:border-blue-500 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-slate-600 block mb-1">Maksimum Kaldıraç Sınırı</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="125"
+                  value={riskSettings.maxLeverage}
+                  onChange={(e) => handleChange('maxLeverage', parseInt(e.target.value) || 5)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-slate-900 font-mono focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Section 2: In-Trade Exit & Trailing Rules */}

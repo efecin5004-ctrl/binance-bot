@@ -78,6 +78,22 @@ const DEFAULT_RISK: RiskSettings = {
   requireFreshCross: true
 };
 
+function deduplicateTradesList<T extends { id?: string; exitTime?: number }>(trades: T[]): T[] {
+  if (!Array.isArray(trades)) return [];
+  const seen = new Set<string>();
+  const result: T[] = [];
+  for (let i = 0; i < trades.length; i++) {
+    const t = trades[i];
+    if (!t) continue;
+    const uniqueId = t.id || `trade-${t.exitTime || Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`;
+    if (!seen.has(uniqueId)) {
+      seen.add(uniqueId);
+      result.push({ ...t, id: uniqueId });
+    }
+  }
+  return result;
+}
+
 export function useTradingEngine() {
   // Navigation & Market selection
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTCUSDT');
@@ -140,7 +156,7 @@ export function useTradingEngine() {
   });
   const [closedTrades, setClosedTrades] = useState<any[]>(() => {
     const saved = localStorage.getItem('bbot_closed_trades');
-    return saved ? JSON.parse(saved) : [];
+    return saved ? deduplicateTradesList(JSON.parse(saved)) : [];
   });
 
   // Settings & Risk
@@ -195,7 +211,7 @@ export function useTradingEngine() {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
-    // First fetch server state on startup
+    // First fetch server state on startup with intelligent preservation of local storage
     fetchServerBotState().then((res) => {
       if (res && res.success && res.state) {
         const srv = res.state;
@@ -205,11 +221,70 @@ export function useTradingEngine() {
         if (srv.botStatus) setBotStatus(srv.botStatus);
         if (srv.tradingMode) setTradingMode(srv.tradingMode);
         if (Array.isArray(srv.positions)) setPositions(srv.positions);
-        if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) setClosedTrades(srv.closedTrades);
-        if (Array.isArray(srv.strategies) && srv.strategies.length > 0) setStrategies(srv.strategies);
-        if (srv.riskSettings) setRiskSettings(srv.riskSettings);
-        if (srv.apiCredentials) setApiCredentials(srv.apiCredentials);
-        if (srv.telegramSettings) setTelegramSettings(srv.telegramSettings);
+        if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) setClosedTrades(deduplicateTradesList(srv.closedTrades));
+        
+        // 1. Risk Settings: prioritize existing saved local settings if present, otherwise use server
+        const localSavedRisk = localStorage.getItem('bbot_risk');
+        if (localSavedRisk) {
+          try {
+            const parsed = JSON.parse(localSavedRisk);
+            setRiskSettings(parsed);
+            syncServerBotConfig({ riskSettings: parsed });
+          } catch {
+            if (srv.riskSettings) setRiskSettings(srv.riskSettings);
+          }
+        } else if (srv.riskSettings) {
+          setRiskSettings(srv.riskSettings);
+          localStorage.setItem('bbot_risk', JSON.stringify(srv.riskSettings));
+        }
+
+        // 2. API Credentials: only override if server has an actual key or local is empty
+        const localSavedApi = localStorage.getItem('bbot_api_creds');
+        if (srv.apiCredentials && srv.apiCredentials.apiKey) {
+          setApiCredentials(srv.apiCredentials);
+          localStorage.setItem('bbot_api_creds', JSON.stringify(srv.apiCredentials));
+        } else if (localSavedApi) {
+          try {
+            const parsed = JSON.parse(localSavedApi);
+            if (parsed.apiKey) {
+              setApiCredentials(parsed);
+              syncServerBotConfig({ apiCredentials: parsed });
+            }
+          } catch {}
+        }
+
+        // 3. Telegram Settings: only override if server has token or local is empty
+        const localSavedTel = localStorage.getItem('bbot_telegram');
+        if (srv.telegramSettings && (srv.telegramSettings.botToken || srv.telegramSettings.chatId)) {
+          setTelegramSettings(srv.telegramSettings);
+          localStorage.setItem('bbot_telegram', JSON.stringify(srv.telegramSettings));
+        } else if (localSavedTel) {
+          try {
+            const parsed = JSON.parse(localSavedTel);
+            if (parsed.botToken || parsed.chatId || parsed.enabled) {
+              setTelegramSettings(parsed);
+              syncServerBotConfig({ telegramSettings: parsed });
+            }
+          } catch {}
+        }
+
+        // 4. Strategies: preserve custom strategies from local storage
+        const localSavedStrats = localStorage.getItem('bbot_strategies_v2');
+        if (localSavedStrats) {
+          try {
+            const parsed = JSON.parse(localSavedStrats);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setStrategies(parsed);
+              syncServerBotConfig({ strategies: parsed });
+            }
+          } catch {
+            if (Array.isArray(srv.strategies) && srv.strategies.length > 0) setStrategies(srv.strategies);
+          }
+        } else if (Array.isArray(srv.strategies) && srv.strategies.length > 0) {
+          setStrategies(srv.strategies);
+          localStorage.setItem('bbot_strategies_v2', JSON.stringify(srv.strategies));
+        }
+
         setTimeout(() => {
           isRemoteUpdatingRef.current = false;
         }, 100);
@@ -230,7 +305,7 @@ export function useTradingEngine() {
             setPaperBalance(srv.paperBalance);
           }
           if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) {
-            setClosedTrades(srv.closedTrades);
+            setClosedTrades(deduplicateTradesList(srv.closedTrades));
           }
         }
       } catch (e) {
@@ -257,11 +332,23 @@ export function useTradingEngine() {
               if (cloudState.tradingMode) setTradingMode(cloudState.tradingMode);
               if (Array.isArray(cloudState.positions)) setPositions(cloudState.positions);
               if (Array.isArray(cloudState.orders)) setOrders(cloudState.orders);
-              if (Array.isArray(cloudState.closedTrades)) setClosedTrades(cloudState.closedTrades);
-              if (Array.isArray(cloudState.strategies) && cloudState.strategies.length > 0) setStrategies(cloudState.strategies);
-              if (cloudState.riskSettings) setRiskSettings(cloudState.riskSettings);
-              if (cloudState.apiCredentials) setApiCredentials(cloudState.apiCredentials);
-              if (cloudState.telegramSettings) setTelegramSettings(cloudState.telegramSettings);
+              if (Array.isArray(cloudState.closedTrades)) setClosedTrades(deduplicateTradesList(cloudState.closedTrades));
+              if (Array.isArray(cloudState.strategies) && cloudState.strategies.length > 0) {
+                setStrategies(cloudState.strategies);
+                localStorage.setItem('bbot_strategies_v2', JSON.stringify(cloudState.strategies));
+              }
+              if (cloudState.riskSettings) {
+                setRiskSettings(cloudState.riskSettings);
+                localStorage.setItem('bbot_risk', JSON.stringify(cloudState.riskSettings));
+              }
+              if (cloudState.apiCredentials && cloudState.apiCredentials.apiKey) {
+                setApiCredentials(cloudState.apiCredentials);
+                localStorage.setItem('bbot_api_creds', JSON.stringify(cloudState.apiCredentials));
+              }
+              if (cloudState.telegramSettings && (cloudState.telegramSettings.botToken || cloudState.telegramSettings.enabled)) {
+                setTelegramSettings(cloudState.telegramSettings);
+                localStorage.setItem('bbot_telegram', JSON.stringify(cloudState.telegramSettings));
+              }
               if (cloudState.selectedSymbol) setSelectedSymbol(cloudState.selectedSymbol);
               if (cloudState.selectedTimeframe) setSelectedTimeframe(cloudState.selectedTimeframe);
 
@@ -531,7 +618,7 @@ export function useTradingEngine() {
           setPaperBalance(bal => bal + closed.initialMargin + netPnl);
 
           const tradeRecord = {
-            id: `trade-${Date.now()}`,
+            id: `trade-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
             symbol: closed.symbol,
             side: closed.side,
             entryPrice: closed.entryPrice,
@@ -548,7 +635,7 @@ export function useTradingEngine() {
             botTriggered: closed.botTriggered
           };
 
-          setClosedTrades(ct => [tradeRecord, ...ct.slice(0, 100)]);
+          setClosedTrades(ct => deduplicateTradesList([tradeRecord, ...ct.slice(0, 100)]));
 
           const statusIcon = netPnl >= 0 ? '🟢 KÂR' : '🔴 ZARAR';
           const alertMsg = `${statusIcon}: ${closed.symbol} ${closed.side} kapatıldı!\nFiyat: $${closed.currentPrice.toFixed(2)} | Net PnL: ${netPnl >= 0 ? '+' : ''}$${netPnl.toFixed(2)} (%${closed.pnlPercent.toFixed(2)})`;
@@ -902,8 +989,8 @@ export function useTradingEngine() {
     setPaperBalance(b => b + target.initialMargin + netPnl);
     setPositions(prev => prev.filter(p => p.id !== positionId));
 
-    setClosedTrades(ct => [{
-      id: `trade-manual-${Date.now()}`,
+    setClosedTrades(ct => deduplicateTradesList([{
+      id: `trade-manual-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       symbol: target.symbol,
       side: target.side,
       entryPrice: target.entryPrice,
@@ -915,7 +1002,7 @@ export function useTradingEngine() {
       entryTime: target.entryTime,
       exitTime: Date.now(),
       fee
-    }, ...ct]);
+    }, ...ct]));
 
     addLog('ORDER', `Manuel Pozisyon Kapatıldı: ${target.symbol} ${target.side} | PnL: $${netPnl.toFixed(2)}`);
   }, [positions, addLog]);

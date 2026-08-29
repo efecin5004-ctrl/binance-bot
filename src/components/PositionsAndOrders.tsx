@@ -162,14 +162,14 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {positions.map((pos) => {
+                {positions.map((pos, idx) => {
                   const isLong = pos.side === 'LONG';
                   const isPnlPositive = pos.pnl >= 0;
                   const isBot = pos.botTriggered || Boolean(pos.strategyName);
                   const botName = pos.strategyName || pos.openedBy || 'Otomatik Strateji Botu';
 
                   return (
-                    <tr key={pos.id} className="hover:bg-slate-50 transition">
+                    <tr key={pos.id ? `pos-${pos.id}-${idx}` : `pos-idx-${idx}`} className="hover:bg-slate-50 transition">
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-1.5 font-sans">
                           <span className="font-bold text-slate-900">{pos.symbol}</span>
@@ -283,10 +283,10 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {orders.map((ord) => {
+                {orders.map((ord, idx) => {
                   const isBot = ord.botTriggered || Boolean(ord.strategyName);
                   return (
-                    <tr key={ord.id} className="hover:bg-slate-50 transition">
+                    <tr key={ord.id ? `ord-${ord.id}-${idx}` : `ord-idx-${idx}`} className="hover:bg-slate-50 transition">
                       <td className="py-2.5 px-3 font-bold text-slate-900">{ord.symbol}</td>
                       <td className="py-2.5 px-3">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
@@ -358,7 +358,7 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
                   const botName = trade.strategyName || trade.openedBy || (isBot ? 'Strateji Botu' : 'Manuel İşlem');
 
                   return (
-                    <tr key={trade.id || idx} className="hover:bg-slate-50 transition">
+                    <tr key={trade.id ? `trade-${trade.id}-${idx}` : `trade-idx-${idx}`} className="hover:bg-slate-50 transition">
                       <td className="py-2.5 px-3 font-bold text-slate-900">{trade.symbol}</td>
                       <td className="py-2.5 px-3">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
@@ -490,7 +490,7 @@ export const PositionsAndOrders: React.FC<PositionsAndOrdersProps> = ({
                       }
 
                       return (
-                        <tr key={idx} className={`hover:bg-slate-50 transition ${isExpired ? 'opacity-75 bg-slate-50/50' : ''}`}>
+                        <tr key={`sig-${sig.strategyId || ''}-${sig.symbol}-${sig.timestamp || idx}-${idx}`} className={`hover:bg-slate-50 transition ${isExpired ? 'opacity-75 bg-slate-50/50' : ''}`}>
                           <td className="py-2.5 px-3 text-slate-500 text-[11px]">
                             {sig.timestamp ? new Date(sig.timestamp).toLocaleTimeString() : 'Anlık'}
                           </td>

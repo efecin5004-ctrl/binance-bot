@@ -108,6 +108,22 @@ export class AutonomousBotEngine {
     this.addLog('INFO', '🚀 Ubuntu 7/24 Server Bot Motoru başlatıldı. Arka plan otonom taraması devrede.');
   }
 
+  private deduplicateTrades(trades: TradeRecord[]): TradeRecord[] {
+    if (!Array.isArray(trades)) return [];
+    const seen = new Set<string>();
+    const result: TradeRecord[] = [];
+    for (let i = 0; i < trades.length; i++) {
+      const t = trades[i];
+      if (!t) continue;
+      const uniqueId = t.id || `trade-${t.exitTime || Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      if (!seen.has(uniqueId)) {
+        seen.add(uniqueId);
+        result.push({ ...t, id: uniqueId });
+      }
+    }
+    return result;
+  }
+
   private loadState(): ServerBotState {
     try {
       if (fs.existsSync(STATE_FILE_PATH)) {
@@ -120,7 +136,7 @@ export class AutonomousBotEngine {
           dailyStartBalance: typeof parsed.dailyStartBalance === 'number' ? parsed.dailyStartBalance : 10000,
           positions: Array.isArray(parsed.positions) ? parsed.positions : [],
           orders: Array.isArray(parsed.orders) ? parsed.orders : [],
-          closedTrades: Array.isArray(parsed.closedTrades) ? parsed.closedTrades : [],
+          closedTrades: Array.isArray(parsed.closedTrades) ? this.deduplicateTrades(parsed.closedTrades) : [],
           strategies: Array.isArray(parsed.strategies) && parsed.strategies.length > 0 ? parsed.strategies : DEFAULT_STRATEGIES,
           riskSettings: parsed.riskSettings || DEFAULT_RISK_SETTINGS,
           apiCredentials: parsed.apiCredentials || DEFAULT_API_CREDENTIALS,
@@ -216,7 +232,7 @@ export class AutonomousBotEngine {
     if (typeof partial.dailyStartBalance === 'number') this.state.dailyStartBalance = partial.dailyStartBalance;
     if (Array.isArray(partial.positions)) this.state.positions = partial.positions;
     if (Array.isArray(partial.orders)) this.state.orders = partial.orders;
-    if (Array.isArray(partial.closedTrades)) this.state.closedTrades = partial.closedTrades;
+    if (Array.isArray(partial.closedTrades)) this.state.closedTrades = this.deduplicateTrades(partial.closedTrades);
     if (Array.isArray(partial.strategies)) this.state.strategies = partial.strategies;
     if (partial.riskSettings) this.state.riskSettings = partial.riskSettings;
     if (partial.apiCredentials) this.state.apiCredentials = partial.apiCredentials;
@@ -685,7 +701,7 @@ export class AutonomousBotEngine {
     this.state.paperBalance += (pos.initialMargin + netPnl);
 
     const tradeRecord: TradeRecord = {
-      id: `trade-${Date.now()}`,
+      id: `trade-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       symbol: pos.symbol,
       side: pos.side,
       entryPrice: pos.entryPrice,
@@ -702,7 +718,7 @@ export class AutonomousBotEngine {
       botTriggered: pos.botTriggered
     };
 
-    this.state.closedTrades = [tradeRecord, ...this.state.closedTrades.slice(0, 200)];
+    this.state.closedTrades = this.deduplicateTrades([tradeRecord, ...this.state.closedTrades.slice(0, 200)]);
     this.state.positions = this.state.positions.filter(p => p.id !== positionId);
 
     this.addLog('ORDER', `🔒 Pozisyon Kapatıldı: ${pos.symbol} ${pos.side} @ $${exitPrice.toFixed(2)} | Net PnL: $${netPnl.toFixed(2)}`);
