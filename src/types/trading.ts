@@ -1,3 +1,24 @@
+export type BotStatus = 'RUNNING' | 'PAUSED' | 'EMERGENCY_STOPPED';
+export type TradingMode = 'PAPER' | 'LIVE';
+
+export interface TradeRecord {
+  id: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  entryPrice: number;
+  exitPrice: number;
+  quantity: number;
+  leverage: number;
+  pnl: number;
+  pnlPercent: number;
+  entryTime: number;
+  exitTime: number;
+  fee: number;
+  openedBy: string;
+  strategyName?: string;
+  botTriggered?: boolean;
+}
+
 export interface Kline {
   time: number;
   open: number;

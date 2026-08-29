@@ -13,7 +13,19 @@ import {
   TelegramSettings,
   AccountBalance
 } from '../types/trading';
-import { getKlines, get24hrTicker, getOrderBookDepth, getRecentTrades, executeBinanceOrder, sendTelegramNotification } from '../services/api';
+import { 
+  getKlines, 
+  get24hrTicker, 
+  getOrderBookDepth, 
+  getRecentTrades, 
+  executeBinanceOrder, 
+  sendTelegramNotification,
+  fetchServerBotState,
+  controlServerBot,
+  syncServerBotConfig,
+  closeServerPosition,
+  resetServerAccount
+} from '../services/api';
 import { computeAllIndicators, evaluateStrategySignal } from '../utils/indicators';
 import { QUANT_STRATEGY_REGISTRY, evaluateQuantStrategySignal } from '../utils/quantStrategies';
 import { QuantStrategyDefinition } from '../types/quant';
@@ -183,10 +195,53 @@ export function useTradingEngine() {
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
 
+    // First fetch server state on startup
+    fetchServerBotState().then((res) => {
+      if (res && res.success && res.state) {
+        const srv = res.state;
+        isRemoteUpdatingRef.current = true;
+        if (typeof srv.paperBalance === 'number') setPaperBalance(srv.paperBalance);
+        if (typeof srv.dailyStartBalance === 'number') setDailyStartBalance(srv.dailyStartBalance);
+        if (srv.botStatus) setBotStatus(srv.botStatus);
+        if (srv.tradingMode) setTradingMode(srv.tradingMode);
+        if (Array.isArray(srv.positions)) setPositions(srv.positions);
+        if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) setClosedTrades(srv.closedTrades);
+        if (Array.isArray(srv.strategies) && srv.strategies.length > 0) setStrategies(srv.strategies);
+        if (srv.riskSettings) setRiskSettings(srv.riskSettings);
+        if (srv.apiCredentials) setApiCredentials(srv.apiCredentials);
+        if (srv.telegramSettings) setTelegramSettings(srv.telegramSettings);
+        setTimeout(() => {
+          isRemoteUpdatingRef.current = false;
+        }, 100);
+      }
+    });
+
+    // Periodic Server state sync (every 2 seconds for instant responsiveness)
+    const serverSyncInterval = setInterval(async () => {
+      try {
+        const srvRes = await fetchServerBotState();
+        if (srvRes && srvRes.success && srvRes.state) {
+          const srv = srvRes.state;
+          // If server has positions or closed trades that differ from local
+          if (Array.isArray(srv.positions)) {
+            setPositions(srv.positions);
+          }
+          if (typeof srv.paperBalance === 'number' && Math.abs(srv.paperBalance - paperBalance) > 0.01) {
+            setPaperBalance(srv.paperBalance);
+          }
+          if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) {
+            setClosedTrades(srv.closedTrades);
+          }
+        }
+      } catch (e) {
+        // silent
+      }
+    }, 2000);
+
     initAuth()
       .then(() => {
         setCloudSyncStatus('CONNECTED');
-        addLog('INFO', '☁️ Firebase Cloud Database bağlantısı kuruldu (Cihazlar arası canlı senkronizasyon aktif).');
+        addLog('INFO', '☁️ Firebase Cloud Database ve Canlı Çift Yönlü Senkronizasyon (Telefon ↔ PC ↔ Sunucu) aktif!');
 
         unsubscribe = subscribeToCloudBotState(
           (cloudState) => {
@@ -227,15 +282,17 @@ export function useTradingEngine() {
       });
 
     return () => {
+      clearInterval(serverSyncInterval);
       if (unsubscribe) unsubscribe();
     };
   }, [addLog]);
 
-  // Persist State to LocalStorage & Firebase Cloud Firestore
+  // Persist State to LocalStorage, Server Daemon & Firebase Cloud Firestore
   useEffect(() => {
     localStorage.setItem('bbot_paper_balance', paperBalance.toString());
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ paperBalance });
+      syncServerBotConfig({ paperBalance });
     }
   }, [paperBalance]);
 
@@ -243,6 +300,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_daily_start_bal', dailyStartBalance.toString());
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ dailyStartBalance });
+      syncServerBotConfig({ dailyStartBalance });
     }
   }, [dailyStartBalance]);
 
@@ -250,6 +308,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_strategies_v2', JSON.stringify(strategies));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ strategies });
+      syncServerBotConfig({ strategies });
     }
   }, [strategies]);
 
@@ -257,6 +316,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_positions', JSON.stringify(positions));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ positions });
+      syncServerBotConfig({ positions });
     }
   }, [positions]);
 
@@ -264,6 +324,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_orders', JSON.stringify(orders));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ orders });
+      syncServerBotConfig({ orders });
     }
   }, [orders]);
 
@@ -271,6 +332,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_closed_trades', JSON.stringify(closedTrades));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ closedTrades });
+      syncServerBotConfig({ closedTrades });
     }
   }, [closedTrades]);
 
@@ -278,6 +340,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_risk', JSON.stringify(riskSettings));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ riskSettings });
+      syncServerBotConfig({ riskSettings });
     }
   }, [riskSettings]);
 
@@ -285,6 +348,7 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_api_creds', JSON.stringify(apiCredentials));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ apiCredentials });
+      syncServerBotConfig({ apiCredentials });
     }
   }, [apiCredentials]);
 
@@ -292,12 +356,15 @@ export function useTradingEngine() {
     localStorage.setItem('bbot_telegram', JSON.stringify(telegramSettings));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ telegramSettings });
+      syncServerBotConfig({ telegramSettings });
     }
   }, [telegramSettings]);
 
   useEffect(() => {
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ botStatus, tradingMode, selectedSymbol, selectedTimeframe });
+      syncServerBotConfig({ botStatus, tradingMode, selectedSymbol, selectedTimeframe });
+      controlServerBot(botStatus === 'RUNNING' ? 'START' : botStatus === 'PAUSED' ? 'PAUSE' : 'EMERGENCY_STOP');
     }
   }, [botStatus, tradingMode, selectedSymbol, selectedTimeframe]);
 
@@ -824,6 +891,8 @@ export function useTradingEngine() {
 
   // Close Single Position
   const closePosition = useCallback((positionId: string) => {
+    closeServerPosition(positionId).catch(console.error);
+
     const target = positions.find(p => p.id === positionId);
     if (!target) return;
 
@@ -859,6 +928,7 @@ export function useTradingEngine() {
 
   // Reset Paper Balance
   const resetPaperAccount = useCallback(() => {
+    resetServerAccount(10000).catch(console.error);
     setPaperBalance(10000);
     setDailyStartBalance(10000);
     setDailyLossCurrent(0);

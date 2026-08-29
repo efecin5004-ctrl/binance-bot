@@ -91,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Cloud Database Sync Pill */}
           <div 
-            title="Bulut Veritabanı (Firebase): Mobil telefon ve masaüstü bilgisayarınız anlık olarak tek bir canlı veritabanına bağlıdır."
+            title="Tek Bir Canlı Sistem: Telefondan yaptığınız işlem PC'de, PC'den yaptığınız telefonda anında gözükür. Ubuntu sunucu da 7/24 arkada izler."
             className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
               cloudSyncStatus === 'CONNECTED'
                 ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -104,7 +104,16 @@ export const Header: React.FC<HeaderProps> = ({
               cloudSyncStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' :
               cloudSyncStatus === 'SYNCING' ? 'bg-blue-500' : 'bg-slate-400'
             }`} />
-            <span>Bulut DB Senkronize</span>
+            <span>Tek Sistem: Canlı Senkronize (PC ↔ Tel ↔ VPS)</span>
+          </div>
+
+          {/* 7/24 Server Daemon Pill */}
+          <div 
+            title="Ubuntu Sunucu 7/24 Otonom Motor: Tarayıcı veya bilgisayar kapalıyken dahi VPS arka planında kesintisiz alım/satım yapar."
+            className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200"
+          >
+            <Cpu className="w-3 h-3 text-indigo-600" />
+            <span>7/24 Sunucu Botu: AKTİF</span>
           </div>
 
           {/* Symbol Select */}

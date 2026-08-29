@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { serverBot } from './server/botEngine';
 
 dotenv.config();
 
@@ -561,6 +562,82 @@ app.post('/api/alerts/telegram', async (req, res) => {
     res.json({ success: true, message: 'Notification sent successfully' });
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// 7/24 AUTONOMOUS SERVER TRADING ENGINE API
+// ----------------------------------------------------
+
+// Get Current 7/24 Server Bot Status & State
+app.get('/api/bot/state', (req, res) => {
+  try {
+    const state = serverBot.getState();
+    res.json({ success: true, state });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Control Bot Status (Start / Pause / Emergency Stop)
+app.post('/api/bot/control', (req, res) => {
+  try {
+    const { action } = req.body; // 'START' | 'PAUSE' | 'EMERGENCY_STOP'
+    if (action === 'START') {
+      serverBot.start();
+      serverBot.updateStatePartial({ botStatus: 'RUNNING' });
+    } else if (action === 'PAUSE') {
+      serverBot.updateStatePartial({ botStatus: 'PAUSED' });
+    } else if (action === 'EMERGENCY_STOP') {
+      serverBot.updateStatePartial({ botStatus: 'EMERGENCY_STOPPED' });
+    }
+    res.json({ success: true, state: serverBot.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Sync Full / Partial Configuration (Strategies, Risk, Credentials, Telegram)
+app.post('/api/bot/sync', (req, res) => {
+  try {
+    const partialState = req.body;
+    const updated = serverBot.updateStatePartial(partialState);
+    res.json({ success: true, state: updated });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Execute Manual Order directly on server
+app.post('/api/bot/order', async (req, res) => {
+  try {
+    const { symbol, side, orderType, quantityUsdt, leverage, stopLoss, takeProfit } = req.body;
+    const pos = await serverBot.executeManualOrder(symbol, side, orderType, quantityUsdt, leverage, stopLoss, takeProfit);
+    res.json({ success: true, position: pos, state: serverBot.getState() });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Close Position on Server
+app.post('/api/bot/close-position', async (req, res) => {
+  try {
+    const { positionId } = req.body;
+    const closed = await serverBot.closePositionById(positionId);
+    res.json({ success: true, closed, state: serverBot.getState() });
+  } catch (err: any) {
+    res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// Reset Account on Server
+app.post('/api/bot/reset', (req, res) => {
+  try {
+    const { balance } = req.body;
+    serverBot.resetAccount(balance || 10000);
+    res.json({ success: true, state: serverBot.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

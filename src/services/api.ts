@@ -174,3 +174,76 @@ export async function sendTelegramNotification(
   });
   return res.json();
 }
+
+// ----------------------------------------------------
+// 7/24 AUTONOMOUS SERVER ENGINE CLIENT API
+// ----------------------------------------------------
+export async function fetchServerBotState() {
+  try {
+    const res = await fetch('/api/bot/state');
+    if (!res.ok) throw new Error('Failed to fetch server state');
+    return await res.json();
+  } catch (e) {
+    console.error('Server bot state fetch error:', e);
+    return null;
+  }
+}
+
+export async function controlServerBot(action: 'START' | 'PAUSE' | 'EMERGENCY_STOP') {
+  const res = await fetch('/api/bot/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action })
+  });
+  return res.json();
+}
+
+export async function syncServerBotConfig(partialConfig: any) {
+  try {
+    const res = await fetch('/api/bot/sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(partialConfig)
+    });
+    return await res.json();
+  } catch (e) {
+    console.error('Sync config error:', e);
+    return null;
+  }
+}
+
+export async function executeServerManualOrder(orderParams: {
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  orderType: 'MARKET' | 'LIMIT';
+  quantityUsdt: number;
+  leverage: number;
+  stopLoss?: number;
+  takeProfit?: number;
+}) {
+  const res = await fetch('/api/bot/order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(orderParams)
+  });
+  return res.json();
+}
+
+export async function closeServerPosition(positionId: string) {
+  const res = await fetch('/api/bot/close-position', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ positionId })
+  });
+  return res.json();
+}
+
+export async function resetServerAccount(balance: number = 10000) {
+  const res = await fetch('/api/bot/reset', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ balance })
+  });
+  return res.json();
+}
+
