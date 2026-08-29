@@ -14,9 +14,20 @@ import { AuditLogsModal } from './components/AuditLogsModal';
 import { AlertTriangle } from 'lucide-react';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'terminal' | 'strategies' | 'risk' | 'backtest' | 'ai'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'strategies' | 'risk' | 'backtest' | 'ai'>(() => {
+    const saved = localStorage.getItem('bbot_active_tab');
+    if (saved === 'terminal' || saved === 'strategies' || saved === 'risk' || saved === 'backtest' || saved === 'ai') {
+      return saved;
+    }
+    return 'terminal';
+  });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLogsOpen, setIsLogsOpen] = useState(false);
+
+  const handleSelectTab = (tab: 'terminal' | 'strategies' | 'risk' | 'backtest' | 'ai') => {
+    setActiveTab(tab);
+    localStorage.setItem('bbot_active_tab', tab);
+  };
 
   const {
     selectedSymbol,
@@ -73,7 +84,7 @@ export default function App() {
       {/* Top Main Navigation & Bot Control Header */}
       <Header
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={handleSelectTab}
         symbol={selectedSymbol}
         onSelectSymbol={setSelectedSymbol}
         ticker={ticker}

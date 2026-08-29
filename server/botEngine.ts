@@ -17,6 +17,7 @@ import {
 import { computeAllIndicators, evaluateStrategySignal } from '../src/utils/indicators';
 import { QUANT_STRATEGY_REGISTRY, evaluateQuantStrategySignal } from '../src/utils/quantStrategies';
 import { QuantStrategyDefinition } from '../src/types/quant';
+import { localSqlDb } from './localSqlDatabase';
 
 const STATE_FILE_PATH = path.join(process.cwd(), 'server_bot_state.json');
 
@@ -28,7 +29,7 @@ const DEFAULT_STRATEGIES: StrategyConfig[] = QUANT_STRATEGY_REGISTRY.map(qs => (
   family: qs.family,
   quantStrategyId: qs.id,
   direction: qs.direction,
-  enabled: qs.id === 'strat-donchian-turtle' || qs.id === 'strat-dual-ema-macro',
+  enabled: false,
   symbol: qs.defaultSymbol || 'BTCUSDT',
   timeframe: qs.timeframe || '1h',
   parameters: qs.parameters,
@@ -105,6 +106,17 @@ export class AutonomousBotEngine {
   constructor() {
     this.state = this.loadState();
     this.state.isServerDaemonRunning = true;
+    
+    // Initialize Local SQLite Database
+    localSqlDb.init().then(() => {
+      // Sync initial strategies & positions to SQLite
+      localSqlDb.syncStrategies(this.state.strategies);
+      localSqlDb.syncPositions(this.state.positions);
+      this.addLog('INFO', '📦 VPS Yerel SQLite Veritabanı başarıyla aktif edildi. Tüm işlemler sıfır maliyetle VPS diskinde saklanıyor.');
+    }).catch(err => {
+      console.error('Local SQLite Init Error:', err);
+    });
+
     this.addLog('INFO', '🚀 Ubuntu 7/24 Server Bot Motoru başlatıldı. Arka plan otonom taraması devrede.');
   }
 
@@ -181,6 +193,15 @@ export class AutonomousBotEngine {
         logs: this.state.logs.slice(0, 300)
       };
       fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(dataToSave, null, 2), 'utf-8');
+      
+      // Mirror to SQLite
+      localSqlDb.setBotState('bot_status', this.state.botStatus);
+      localSqlDb.setBotState('trading_mode', this.state.tradingMode);
+      localSqlDb.setBotState('paper_balance', this.state.paperBalance);
+      localSqlDb.setBotState('daily_start_balance', this.state.dailyStartBalance);
+      localSqlDb.setBotState('risk_settings', this.state.riskSettings);
+      localSqlDb.syncPositions(this.state.positions);
+      localSqlDb.syncStrategies(this.state.strategies);
     } catch (e) {
       console.error('Failed to write server_bot_state.json:', e);
     }
@@ -203,6 +224,9 @@ export class AutonomousBotEngine {
     };
     this.state.logs = [entry, ...this.state.logs.slice(0, 300)];
     console.log(`[BOT-ENGINE] [${level}] ${message}`);
+    
+    // Mirror to SQLite
+    localSqlDb.insertLog(level, message, details);
   }
 
   public async sendTelegramAlert(msg: string): Promise<void> {
@@ -720,6 +744,9 @@ export class AutonomousBotEngine {
 
     this.state.closedTrades = this.deduplicateTrades([tradeRecord, ...this.state.closedTrades.slice(0, 200)]);
     this.state.positions = this.state.positions.filter(p => p.id !== positionId);
+
+    // Save trade directly into SQLite database
+    localSqlDb.insertOrUpdateTrade(tradeRecord);
 
     this.addLog('ORDER', `🔒 Pozisyon Kapatıldı: ${pos.symbol} ${pos.side} @ $${exitPrice.toFixed(2)} | Net PnL: $${netPnl.toFixed(2)}`);
     this.saveState();

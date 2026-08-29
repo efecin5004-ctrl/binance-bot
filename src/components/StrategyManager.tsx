@@ -29,7 +29,8 @@ import {
   RefreshCw,
   Cpu,
   BarChart3,
-  Scale
+  Scale,
+  PowerOff
 } from 'lucide-react';
 
 interface StrategyManagerProps {
@@ -289,6 +290,36 @@ export const StrategyManager: React.FC<StrategyManagerProps> = ({
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => {
+                    const allDisabled = strategies.map(s => ({ ...s, enabled: false }));
+                    onUpdateStrategies(allDisabled);
+                    setDeploymentSuccessMessage('⏸️ Tüm botlar durduruldu.');
+                    setTimeout(() => setDeploymentSuccessMessage(null), 3000);
+                  }}
+                  disabled={activeBotsCount === 0}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-50 hover:bg-amber-100 disabled:opacity-40 text-amber-800 border border-amber-200 text-xs font-bold transition"
+                  title="Tüm botları tek tıkla durdur"
+                >
+                  <PowerOff className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Tümünü Durdur</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const allEnabled = strategies.map(s => ({ ...s, enabled: true }));
+                    onUpdateStrategies(allEnabled);
+                    setDeploymentSuccessMessage('⚡ Tüm botlar aktif edildi.');
+                    setTimeout(() => setDeploymentSuccessMessage(null), 3000);
+                  }}
+                  disabled={activeBotsCount === strategies.length}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 hover:bg-emerald-100 disabled:opacity-40 text-emerald-800 border border-emerald-200 text-xs font-bold transition"
+                  title="Tüm botları tek tıkla aktif et"
+                >
+                  <Zap className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Tümünü Başlat</span>
+                </button>
+
                 <button
                   onClick={() => {
                     setSelectedRegistryStrat(QUANT_STRATEGY_REGISTRY[0]);

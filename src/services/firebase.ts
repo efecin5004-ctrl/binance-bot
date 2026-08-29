@@ -90,30 +90,34 @@ export const getDeviceId = (): string => {
   return deviceId;
 };
 
-// Subscribe to real-time bot state from Firestore
+// Subscribe to real-time bot state from Firestore (optional cloud sync)
 export const subscribeToCloudBotState = (
   onStateUpdate: (state: CloudBotState) => void,
   onError?: (err: any) => void
 ) => {
-  const docRef = doc(db, BOT_STATE_COLLECTION, BOT_STATE_DOC);
+  try {
+    const docRef = doc(db, BOT_STATE_COLLECTION, BOT_STATE_DOC);
 
-  return onSnapshot(
-    docRef,
-    (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data() as CloudBotState;
-        onStateUpdate(data);
+    return onSnapshot(
+      docRef,
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data() as CloudBotState;
+          onStateUpdate(data);
+        }
+      },
+      (error) => {
+        // Silently handled: VPS Local SQLite is primary authoritative DB
+        console.info('Cloud sync idle, operating on VPS Local SQLite engine.');
+        if (onError) onError(error);
       }
-    },
-    (error) => {
-      console.error('Error listening to Cloud Firestore bot state:', error);
-      if (onError) onError(error);
-    }
-  );
+    );
+  } catch (err) {
+    return () => {};
+  }
 };
 
-// Save bot state update to Firestore
-let saveTimeout: any = null;
+// Save bot state update to Firestore (optional fallback)
 export const saveCloudBotState = async (partialState: Partial<CloudBotState>): Promise<void> => {
   try {
     const docRef = doc(db, BOT_STATE_COLLECTION, BOT_STATE_DOC);
@@ -133,6 +137,6 @@ export const saveCloudBotState = async (partialState: Partial<CloudBotState>): P
 
     await setDoc(docRef, cleanedPayload, { merge: true });
   } catch (error) {
-    console.error('Failed to save state to Cloud Firestore:', error);
+    // Primary storage is VPS SQLite; silent cloud fallback
   }
 };

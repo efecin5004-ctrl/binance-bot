@@ -247,3 +247,62 @@ export async function resetServerAccount(balance: number = 10000) {
   return res.json();
 }
 
+// ----------------------------------------------------
+// VPS SQLITE DATABASE CLIENT METHODS
+// ----------------------------------------------------
+export async function fetchSqlStats() {
+  try {
+    const res = await fetch('/api/db/stats');
+    if (!res.ok) throw new Error('Failed to fetch DB stats');
+    return await res.json();
+  } catch (err) {
+    console.error('SQL stats error:', err);
+    return null;
+  }
+}
+
+export async function fetchSqlTrades(limit: number = 200) {
+  try {
+    const res = await fetch(`/api/db/trades?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to fetch DB trades');
+    return await res.json();
+  } catch (err) {
+    console.error('SQL trades error:', err);
+    return { success: false, trades: [] };
+  }
+}
+
+export async function fetchSqlPositions() {
+  try {
+    const res = await fetch('/api/db/positions');
+    if (!res.ok) throw new Error('Failed to fetch DB positions');
+    return await res.json();
+  } catch (err) {
+    console.error('SQL positions error:', err);
+    return { success: false, positions: [] };
+  }
+}
+
+export async function fetchSqlStrategies() {
+  try {
+    const res = await fetch('/api/db/strategies');
+    if (!res.ok) throw new Error('Failed to fetch DB strategies');
+    return await res.json();
+  } catch (err) {
+    console.error('SQL strategies error:', err);
+    return { success: false, strategies: [] };
+  }
+}
+
+export async function fetchSqlLogs(limit: number = 100) {
+  try {
+    const res = await fetch(`/api/db/logs?limit=${limit}`);
+    if (!res.ok) throw new Error('Failed to fetch DB logs');
+    return await res.json();
+  } catch (err) {
+    console.error('SQL logs error:', err);
+    return { success: false, logs: [] };
+  }
+}
+
+

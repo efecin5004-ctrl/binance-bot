@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ApiCredentials, TelegramSettings } from '../types/trading';
-import { testBinanceApiConnection, sendTelegramNotification } from '../services/api';
-import { Settings, Key, Shield, Send, CheckCircle2, AlertCircle, RefreshCw, X, RotateCcw, Save, Check } from 'lucide-react';
+import { testBinanceApiConnection, sendTelegramNotification, fetchSqlStats } from '../services/api';
+import { Settings, Key, Shield, Send, CheckCircle2, AlertCircle, RefreshCw, X, RotateCcw, Save, Check, Database, Download, HardDrive } from 'lucide-react';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -39,6 +39,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [telegramTestResult, setTelegramTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const [savedBanner, setSavedBanner] = useState<string | null>(null);
+  const [sqlDbStats, setSqlDbStats] = useState<any>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(false);
+
+  const loadSqlStats = async () => {
+    setIsLoadingStats(true);
+    const res = await fetchSqlStats();
+    if (res?.stats) {
+      setSqlDbStats(res.stats);
+    }
+    setIsLoadingStats(false);
+  };
 
   // Sync internal form state whenever modal is opened or props update
   useEffect(() => {
@@ -52,6 +63,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       setApiTestResult(null);
       setTelegramTestResult(null);
       setSavedBanner(null);
+      loadSqlStats();
     }
   }, [isOpen, apiCredentials, telegramSettings]);
 
@@ -311,7 +323,77 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        {/* Section 3: Paper Account Reset */}
+        {/* Section 3: VPS Local SQLite Database Management (100% Free & Local) */}
+        <div className="space-y-3 bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 font-bold text-emerald-950">
+              <Database className="w-4 h-4 text-emerald-700" />
+              <span>VPS Yerel SQLite Veritabanı (Ücretsiz & Sıfır Maliyet)</span>
+            </div>
+            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+              <span>YEREL SQL AKTİF</span>
+            </span>
+          </div>
+
+          <p className="text-emerald-800 text-[11px] leading-relaxed">
+            Tüm emirler, kapalı işlemler, pozisyonlar ve bot strateji parametreleri doğrudan VPS sunucunuzun NVMe/SSD diskinde <strong className="font-mono text-emerald-950">trading_bot.sqlite</strong> ilişkisel veritabanı dosyasında sıfır gecikmeyle saklanır. Herhangi bir bulut veritabanı ücreti veya harici kota yoktur.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-white/80 p-2.5 rounded-lg border border-emerald-200 text-slate-700 font-mono">
+            <div>
+              <span className="text-[10px] text-slate-500 block">KAYITLI İŞLEM</span>
+              <span className="font-bold text-sm text-slate-900">{sqlDbStats?.tradesCount ?? '0'} adet</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block">AÇIK POZİSYON</span>
+              <span className="font-bold text-sm text-slate-900">{sqlDbStats?.positionsCount ?? '0'} adet</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block">STRATEJİLER</span>
+              <span className="font-bold text-sm text-slate-900">{sqlDbStats?.strategiesCount ?? '0'} bot</span>
+            </div>
+            <div>
+              <span className="text-[10px] text-slate-500 block">DİSK BOYUTU</span>
+              <span className="font-bold text-sm text-slate-900">
+                {sqlDbStats?.fileSizeBytes ? `${(sqlDbStats.fileSizeBytes / 1024).toFixed(1)} KB` : '< 10 KB'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <a
+              href="/api/db/download"
+              download="trading_bot.sqlite"
+              className="flex items-center gap-1.5 px-3 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold text-xs transition shadow-xs"
+              title="SQLite dosyasını bilgisayarınıza indirin"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>.sqlite Dosyasını İndir</span>
+            </a>
+
+            <a
+              href="/api/db/export-json"
+              download={`trading_bot_backup_${Date.now()}.json`}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 rounded-lg font-bold text-xs transition shadow-xs"
+              title="Tüm veritabanı tablolarını JSON yedeği olarak indirin"
+            >
+              <HardDrive className="w-3.5 h-3.5 text-emerald-700" />
+              <span>JSON Yedek İndir</span>
+            </a>
+
+            <button
+              onClick={loadSqlStats}
+              disabled={isLoadingStats}
+              className="flex items-center gap-1 px-2.5 py-2 text-emerald-800 hover:text-emerald-950 text-xs font-semibold ml-auto"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoadingStats ? 'animate-spin' : ''}`} />
+              <span>Yenile</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Section 4: Paper Account Reset */}
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
           <div>
             <span className="font-bold text-slate-900 block">Paper Trading Bakiyesini Sıfırla</span>

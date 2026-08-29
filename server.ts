@@ -1,10 +1,12 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { serverBot } from './server/botEngine';
+import { localSqlDb } from './server/localSqlDatabase';
 
 dotenv.config();
 
@@ -636,6 +638,101 @@ app.post('/api/bot/reset', (req, res) => {
     const { balance } = req.body;
     serverBot.resetAccount(balance || 10000);
     res.json({ success: true, state: serverBot.getState() });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ----------------------------------------------------
+// ZERO-COST VPS SQLITE DATABASE REST ENDPOINTS
+// ----------------------------------------------------
+
+// Get SQLite Database Health & Statistics
+app.get('/api/db/stats', (req, res) => {
+  try {
+    const stats = localSqlDb.getDatabaseStats();
+    res.json({ success: true, stats });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get Trades from SQLite
+app.get('/api/db/trades', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string || '200', 10);
+    const trades = localSqlDb.getAllTrades(limit);
+    res.json({ success: true, trades });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get Positions from SQLite
+app.get('/api/db/positions', (req, res) => {
+  try {
+    const positions = localSqlDb.getAllPositions();
+    res.json({ success: true, positions });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get Strategies from SQLite
+app.get('/api/db/strategies', (req, res) => {
+  try {
+    const strategies = localSqlDb.getAllStrategies();
+    res.json({ success: true, strategies });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Get System Logs from SQLite
+app.get('/api/db/logs', (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit as string || '100', 10);
+    const logs = localSqlDb.getRecentLogs(limit);
+    res.json({ success: true, logs });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Export Database as JSON Dump (Zero Configuration Backup)
+app.get('/api/db/export-json', (req, res) => {
+  try {
+    const trades = localSqlDb.getAllTrades(5000);
+    const positions = localSqlDb.getAllPositions();
+    const strategies = localSqlDb.getAllStrategies();
+    const logs = localSqlDb.getRecentLogs(500);
+    const stats = localSqlDb.getDatabaseStats();
+
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename=trading_bot_backup_${Date.now()}.json`);
+    res.json({
+      exportedAt: new Date().toISOString(),
+      stats,
+      trades,
+      positions,
+      strategies,
+      logs
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Download SQLite Binary Database File
+app.get('/api/db/download', (req, res) => {
+  try {
+    localSqlDb.saveToDiskSync();
+    const dbPath = path.join(process.cwd(), 'trading_bot.sqlite');
+    if (fs.existsSync(dbPath)) {
+      res.download(dbPath, 'trading_bot.sqlite');
+    } else {
+      res.status(404).json({ success: false, error: 'Database file not found' });
+    }
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

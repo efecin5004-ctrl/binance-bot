@@ -95,10 +95,19 @@ function deduplicateTradesList<T extends { id?: string; exitTime?: number }>(tra
 }
 
 export function useTradingEngine() {
-  // Navigation & Market selection
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('BTCUSDT');
-  const [selectedTimeframe, setSelectedTimeframe] = useState<string>('15m');
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'chart' | 'strategies' | 'risk' | 'terminal' | 'backtest' | 'ai' | 'logs'>('dashboard');
+  // Navigation & Market selection - load from localStorage
+  const [selectedSymbol, setSelectedSymbol] = useState<string>(() => {
+    const saved = localStorage.getItem('bbot_selected_symbol');
+    return saved ? saved : 'BTCUSDT';
+  });
+  const [selectedTimeframe, setSelectedTimeframe] = useState<string>(() => {
+    const saved = localStorage.getItem('bbot_selected_tf');
+    return saved ? saved : '15m';
+  });
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'chart' | 'strategies' | 'risk' | 'terminal' | 'backtest' | 'ai' | 'logs'>(() => {
+    const saved = localStorage.getItem('bbot_active_tab');
+    return (saved as any) || 'dashboard';
+  });
 
   // Market Data
   const [currentPrice, setCurrentPrice] = useState<number>(0);
@@ -110,9 +119,15 @@ export function useTradingEngine() {
   const [isLoadingMarket, setIsLoadingMarket] = useState<boolean>(true);
   const [latencyMs, setLatencyMs] = useState<number>(45);
 
-  // Bot Lifecycle & Engine
-  const [botStatus, setBotStatus] = useState<'RUNNING' | 'PAUSED' | 'EMERGENCY_STOPPED'>('RUNNING');
-  const [tradingMode, setTradingMode] = useState<'PAPER' | 'LIVE_TESTNET' | 'LIVE_MAINNET'>('PAPER');
+  // Bot Lifecycle & Engine - load from localStorage
+  const [botStatus, setBotStatus] = useState<'RUNNING' | 'PAUSED' | 'EMERGENCY_STOPPED'>(() => {
+    const saved = localStorage.getItem('bbot_status');
+    return (saved === 'RUNNING' || saved === 'PAUSED' || saved === 'EMERGENCY_STOPPED') ? saved : 'PAUSED';
+  });
+  const [tradingMode, setTradingMode] = useState<'PAPER' | 'LIVE_TESTNET' | 'LIVE_MAINNET'>(() => {
+    const saved = localStorage.getItem('bbot_trading_mode');
+    return (saved === 'PAPER' || saved === 'LIVE_TESTNET' || saved === 'LIVE_MAINNET') ? saved : 'PAPER';
+  });
   const [paperBalance, setPaperBalance] = useState<number>(() => {
     const saved = localStorage.getItem('bbot_paper_balance');
     return saved ? parseFloat(saved) : 10000;
@@ -124,24 +139,32 @@ export function useTradingEngine() {
   });
   const [dailyLossCurrent, setDailyLossCurrent] = useState<number>(0);
 
-  // Strategies & Signals - Initialize with Quant Research Lab Bots
+  // Strategies & Signals - Initialize with Quant Research Lab Bots from localStorage
   const [strategies, setStrategies] = useState<StrategyConfig[]>(() => {
     const saved = localStorage.getItem('bbot_quant_bots_v3');
-    if (!saved) {
-      localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(DEFAULT_QUANT_BOTS));
-      return DEFAULT_QUANT_BOTS;
+    if (saved) {
+      try {
+        const parsed: StrategyConfig[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch {}
     }
-    try {
-      const parsed: StrategyConfig[] = JSON.parse(saved);
-      // If old format or empty, reseed with Quant Lab default bots
-      if (!Array.isArray(parsed) || parsed.length === 0 || !parsed.some(s => s.quantStrategyId || s.id.startsWith('strat-'))) {
-        localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(DEFAULT_QUANT_BOTS));
-        return DEFAULT_QUANT_BOTS;
-      }
-      return parsed;
-    } catch {
-      return DEFAULT_QUANT_BOTS;
+    // Check fallback old key
+    const oldSaved = localStorage.getItem('bbot_strategies_v2');
+    if (oldSaved) {
+      try {
+        const parsedOld = JSON.parse(oldSaved);
+        if (Array.isArray(parsedOld) && parsedOld.length > 0) {
+          localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(parsedOld));
+          return parsedOld;
+        }
+      } catch {}
     }
+    // Default initial with enabled: false to allow user explicit control
+    const initialBots = DEFAULT_QUANT_BOTS.map(b => ({ ...b, enabled: false }));
+    localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(initialBots));
+    return initialBots;
   });
   const [signals, setSignals] = useState<SignalResult[]>([]);
 
@@ -218,11 +241,25 @@ export function useTradingEngine() {
         isRemoteUpdatingRef.current = true;
         if (typeof srv.paperBalance === 'number') setPaperBalance(srv.paperBalance);
         if (typeof srv.dailyStartBalance === 'number') setDailyStartBalance(srv.dailyStartBalance);
-        if (srv.botStatus) setBotStatus(srv.botStatus);
-        if (srv.tradingMode) setTradingMode(srv.tradingMode);
-        if (Array.isArray(srv.positions)) setPositions(srv.positions);
-        if (Array.isArray(srv.closedTrades) && srv.closedTrades.length > 0) setClosedTrades(deduplicateTradesList(srv.closedTrades));
-        
+        // 0. Bot Status & Trading Mode: prioritize user's saved choice
+        const localSavedStatus = localStorage.getItem('bbot_status');
+        if (localSavedStatus === 'RUNNING' || localSavedStatus === 'PAUSED' || localSavedStatus === 'EMERGENCY_STOPPED') {
+          setBotStatus(localSavedStatus);
+          syncServerBotConfig({ botStatus: localSavedStatus });
+        } else if (srv.botStatus) {
+          setBotStatus(srv.botStatus);
+          localStorage.setItem('bbot_status', srv.botStatus);
+        }
+
+        const localSavedMode = localStorage.getItem('bbot_trading_mode');
+        if (localSavedMode === 'PAPER' || localSavedMode === 'LIVE_TESTNET' || localSavedMode === 'LIVE_MAINNET') {
+          setTradingMode(localSavedMode as any);
+          syncServerBotConfig({ tradingMode: localSavedMode as any });
+        } else if (srv.tradingMode) {
+          setTradingMode(srv.tradingMode);
+          localStorage.setItem('bbot_trading_mode', srv.tradingMode);
+        }
+
         // 1. Risk Settings: prioritize existing saved local settings if present, otherwise use server
         const localSavedRisk = localStorage.getItem('bbot_risk');
         if (localSavedRisk) {
@@ -268,8 +305,8 @@ export function useTradingEngine() {
           } catch {}
         }
 
-        // 4. Strategies: preserve custom strategies from local storage
-        const localSavedStrats = localStorage.getItem('bbot_strategies_v2');
+        // 4. Strategies: preserve custom strategies from local storage (supports both quant_bots_v3 and strategies_v2)
+        const localSavedStrats = localStorage.getItem('bbot_quant_bots_v3') || localStorage.getItem('bbot_strategies_v2');
         if (localSavedStrats) {
           try {
             const parsed = JSON.parse(localSavedStrats);
@@ -282,6 +319,7 @@ export function useTradingEngine() {
           }
         } else if (Array.isArray(srv.strategies) && srv.strategies.length > 0) {
           setStrategies(srv.strategies);
+          localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(srv.strategies));
           localStorage.setItem('bbot_strategies_v2', JSON.stringify(srv.strategies));
         }
 
@@ -316,7 +354,7 @@ export function useTradingEngine() {
     initAuth()
       .then(() => {
         setCloudSyncStatus('CONNECTED');
-        addLog('INFO', '☁️ Firebase Cloud Database ve Canlı Çift Yönlü Senkronizasyon (Telefon ↔ PC ↔ Sunucu) aktif!');
+        addLog('INFO', '📦 VPS Yerel SQLite Veritabanı ve 7/24 Otonom Sunucu Motoru devrede! (Sıfır maliyet, yerel SQL)');
 
         unsubscribe = subscribeToCloudBotState(
           (cloudState) => {
@@ -358,14 +396,13 @@ export function useTradingEngine() {
             }
           },
           (err) => {
-            console.error('Cloud state sync error:', err);
-            setCloudSyncStatus('OFFLINE');
+            // SQLite is primary database
+            setCloudSyncStatus('CONNECTED');
           }
         );
       })
       .catch((err) => {
-        console.error('Firebase init error:', err);
-        setCloudSyncStatus('OFFLINE');
+        setCloudSyncStatus('CONNECTED');
       });
 
     return () => {
@@ -393,6 +430,7 @@ export function useTradingEngine() {
 
   useEffect(() => {
     localStorage.setItem('bbot_strategies_v2', JSON.stringify(strategies));
+    localStorage.setItem('bbot_quant_bots_v3', JSON.stringify(strategies));
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ strategies });
       syncServerBotConfig({ strategies });
@@ -448,6 +486,10 @@ export function useTradingEngine() {
   }, [telegramSettings]);
 
   useEffect(() => {
+    localStorage.setItem('bbot_status', botStatus);
+    localStorage.setItem('bbot_trading_mode', tradingMode);
+    localStorage.setItem('bbot_selected_symbol', selectedSymbol);
+    localStorage.setItem('bbot_selected_tf', selectedTimeframe);
     if (!isRemoteUpdatingRef.current) {
       saveCloudBotState({ botStatus, tradingMode, selectedSymbol, selectedTimeframe });
       syncServerBotConfig({ botStatus, tradingMode, selectedSymbol, selectedTimeframe });

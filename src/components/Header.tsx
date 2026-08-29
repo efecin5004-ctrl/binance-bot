@@ -89,23 +89,15 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Cloud Database Sync Pill */}
-          <div 
-            title="Tek Bir Canlı Sistem: Telefondan yaptığınız işlem PC'de, PC'den yaptığınız telefonda anında gözükür. Ubuntu sunucu da 7/24 arkada izler."
-            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
-              cloudSyncStatus === 'CONNECTED'
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : cloudSyncStatus === 'SYNCING'
-                ? 'bg-blue-50 text-blue-700 border-blue-200 animate-pulse'
-                : 'bg-slate-100 text-slate-600 border-slate-200'
-            }`}
+          {/* VPS SQLite Database Sync Pill */}
+          <button 
+            onClick={onOpenSettings}
+            title="VPS Yerel SQLite Veritabanı: Sıfır maliyetle VPS diskinizde çalışan ilişkisel veritabanı (trades, positions, bot_state). Tıklayarak veritabanı yedeğini indirebilirsiniz."
+            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100 transition cursor-pointer"
           >
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              cloudSyncStatus === 'CONNECTED' ? 'bg-emerald-500 animate-pulse' :
-              cloudSyncStatus === 'SYNCING' ? 'bg-blue-500' : 'bg-slate-400'
-            }`} />
-            <span>Tek Sistem: Canlı Senkronize (PC ↔ Tel ↔ VPS)</span>
-          </div>
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
+            <span>VPS SQLite DB (Ücretsiz & Yerel)</span>
+          </button>
 
           {/* 7/24 Server Daemon Pill */}
           <div 
